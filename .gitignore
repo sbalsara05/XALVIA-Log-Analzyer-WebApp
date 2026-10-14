@@ -1,0 +1,55 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environments
+venv/
+env/
+.venv/
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Build and distribution files
+dist/
+build/
+*.egg-info/
+
+# Logs and databases
+*.log
+*.sqlite3
+
+# Environment variables
+.env
+*env
+.env.local
+
+# macOS
+.DS_Store
+
+# Jupyter Notebook
+.ipynb_checkpoints/
+
+common commands.txt
+
+# API Key files
+*.json
+*api*
+precise*
+
+# log files
+logs/
+
+# CLAUDE files
+CLAUDE*
+
+# Zip files
+*.zip
+
+# npm node_modules
+**/node_modules/*
+

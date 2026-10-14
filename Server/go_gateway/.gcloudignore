@@ -1,0 +1,6 @@
+#!include:.gitignore
+.env
+.env*
+*.json
+*.md
+.git*
