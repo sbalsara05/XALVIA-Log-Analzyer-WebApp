@@ -26,7 +26,8 @@ build/
 # Environment variables
 .env
 *env
-.env.local
+.env.*
+!.env.example
 
 # macOS
 .DS_Store
@@ -36,9 +37,20 @@ build/
 
 common commands.txt
 
-# API Key files
-*.json
-*api*
+# Credential files. Name the secret, not the extension: a blanket *.json
+# rule also hid package.json and tsconfig.json. Server/go_gateway/.gitignore
+# still ignores every *.json in that directory, where the SA key lives.
+*service-account*.json
+*sa-key*.json
+*sa_key*.json
+*credentials*.json
+client_secret*.json
+ricovr-device-cloud-*.json
+google-services.json
+GoogleService-Info.plist
+*.pem
+*.p12
+*.key
 precise*
 
 # log files
