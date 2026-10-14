@@ -1,0 +1,8 @@
+firebase_uid,email,organization_id,role,read,write
+uid_read_only,readonly@test.com,org_001,user,true,false
+uid_read_write,readwrite@test.com,org_001,admin,true,true
+uid_root,root@system.com,root,admin,true,true
+uid_disabled,disabled@test.com,org_002,user,false,false
+uid_other_org,other@test.com,org_002,user,true,false
+eK62j6LyNva62Ritu4NLa0MGrSW2,lakshay.mohan94@gmail.com,org_001,admin,true,true
+tUxuB2TWmjgxajubjxxMaa4VL1D2,lakshay.piplani94@gmail.com,org_002,user,true,true
