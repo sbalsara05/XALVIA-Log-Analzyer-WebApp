@@ -12,6 +12,7 @@ on:
 jobs:
   build:
     strategy:
+      fail-fast: false               # let each OS finish so one failure doesn't hide the other
       matrix:
         os: [ windows-latest, macos-latest ]
         include:
