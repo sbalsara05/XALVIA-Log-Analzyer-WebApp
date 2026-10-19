@@ -437,7 +437,8 @@ PyInstaller produces two directories:
 | Directory | Contents |
 |---|---|
 | `build/log_analyzer/` | Intermediate build artefacts — safe to delete after a successful build |
-| `dist/log_analyzer/` | The distributable folder — ship this to end users |
+| `dist/log_analyzer/` | The distributable folder — ship this to end users on Windows and Linux |
+| `dist/log_analyzer.app` | macOS only: the same build wrapped as an app bundle - ship this to macOS users |
 
 ### 9b. Configure the Production Gateway URL
 
@@ -454,14 +455,24 @@ XALIVA_GATEWAY_URL=YOUR_GATEWAY_URL
 No Python installation or conda environment is required on the target machine:
 
 ```bash
-# Linux / macOS
+# Linux
 dist/log_analyzer/log_analyzer
+
+# macOS
+open dist/log_analyzer.app
 
 # Windows
 dist\log_analyzer\log_analyzer.exe
 ```
 
-Place the `.env` from 9b in the same directory as the executable before launching.
+On Windows and Linux, place the `.env` from 9b in the same directory as the executable before launching.
+
+On macOS, an app opened from Finder or with `open` starts in `/`, so it never finds a `.env` and uses the default gateway URL in `src/constants.py`. To use a `.env`, launch the executable inside the bundle from a terminal, in the directory that holds the `.env`:
+
+```bash
+cd path/to/folder-with-env
+/path/to/log_analyzer.app/Contents/MacOS/log_analyzer
+```
 
 ---
 
