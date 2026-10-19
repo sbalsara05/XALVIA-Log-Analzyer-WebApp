@@ -1,5 +1,6 @@
 # -*- mode: python ; coding: utf-8 -*-
 # PyInstaller spec — onedir + noconsole, PySide6/QML, Windows
+import sys
 from pathlib import Path
 
 project_root = Path(SPECPATH)
@@ -118,3 +119,15 @@ coll = COLLECT(
     ],
     name="log_analyzer",
 )
+
+# ---------------------------------------------------------------------------
+# BUNDLE — macOS only: wrap the onedir output in dist/log_analyzer.app so it
+# can be launched from Finder. PyInstaller converts the .ico to .icns (Pillow).
+# ---------------------------------------------------------------------------
+if sys.platform == "darwin":
+    app = BUNDLE(
+        coll,
+        name="log_analyzer.app",
+        icon=str(project_root / "logo" / "RICOVR_LOGO.ico"),
+        bundle_identifier="com.ricovr.xalivalog",
+    )
