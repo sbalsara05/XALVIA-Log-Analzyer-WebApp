@@ -1,0 +1,67 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environments
+venv/
+env/
+.venv/
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Build and distribution files
+dist/
+build/
+*.egg-info/
+
+# Logs and databases
+*.log
+*.sqlite3
+
+# Environment variables
+.env
+*env
+.env.*
+!.env.example
+
+# macOS
+.DS_Store
+
+# Jupyter Notebook
+.ipynb_checkpoints/
+
+common commands.txt
+
+# Credential files. Name the secret, not the extension: a blanket *.json
+# rule also hid package.json and tsconfig.json. Server/go_gateway/.gitignore
+# still ignores every *.json in that directory, where the SA key lives.
+*service-account*.json
+*sa-key*.json
+*sa_key*.json
+*credentials*.json
+client_secret*.json
+ricovr-device-cloud-*.json
+google-services.json
+GoogleService-Info.plist
+*.pem
+*.p12
+*.key
+precise*
+
+# log files
+logs/
+
+# CLAUDE files
+CLAUDE*
+
+# Zip files
+*.zip
+
+# npm node_modules
+**/node_modules/*
+

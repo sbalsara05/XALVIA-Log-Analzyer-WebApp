@@ -1,0 +1,19 @@
+services:
+  admin:
+    build: .
+    container_name: xaliva_admin
+    ports:
+      - "5173:5173"
+    volumes:
+      - .:/app
+      - /app/node_modules
+
+  test:
+    build: .
+    container_name: xaliva_admin_test
+    command: npm test
+    volumes:
+      - .:/app
+      - /app/node_modules
+    profiles:
+      - test
