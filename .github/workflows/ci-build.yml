@@ -12,6 +12,7 @@ on:
 jobs:
   build:
     strategy:
+      fail-fast: false               # let each OS finish so one failure doesn't hide the other
       matrix:
         os: [ windows-latest, macos-latest ]
         include:
@@ -49,6 +50,7 @@ jobs:
 
     # 5) Build with PyInstaller (one-dir, spec-driven)
     - name: Build (PyInstaller one-dir)
+      shell: bash                    # script uses bash syntax; Windows defaults to PowerShell
       run: |
         pyinstaller log_analyzer.spec
 
