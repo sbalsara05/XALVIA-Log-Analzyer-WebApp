@@ -1,0 +1,10 @@
+{
+  "description": "Designed for lab technicians, this web app simplifies device management with a clean, intuitive interface, enabling easy access to logs and device status.",
+  "robots": {
+    "index": false
+  },
+  "accessibility": {
+    "addBypassLinks": false,
+    "ignoreReducedMotion": false
+  }
+}
