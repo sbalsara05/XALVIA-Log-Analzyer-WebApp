@@ -34,6 +34,7 @@
     "@types/node": "^24.8.1",
     "@types/react": "^19.2.2",
     "@types/react-dom": "^19.2.2",
+    "@types/w3c-web-serial": "^1.0.9",
     "@vitejs/plugin-react": "^5.0.4",
     "autoprefixer": "^10.6.1",
     "postcss": "^8.5.31",
