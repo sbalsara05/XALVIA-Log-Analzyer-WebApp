@@ -1,0 +1,73 @@
+# .github/workflows/ci-build.yml
+name: CI & Build
+
+# ──────────────────────── Triggers ──────────────────────────
+on:
+  workflow_dispatch:             # manual “Run workflow” button
+  push:
+    branches: [ main, threading ]           # CI on pushes to main
+    tags:     [ 'v*.*.*' ]       # release build on vX.Y.Z tags
+
+# ─────────────────── Matrix: Win + macOS ────────────────────
+jobs:
+  build:
+    strategy:
+      fail-fast: false               # let each OS finish so one failure doesn't hide the other
+      matrix:
+        os: [ windows-latest, macos-latest ]
+        include:
+          # Per-OS custom fields can override / add keys
+          - os: windows-latest
+            py: "3.12.4"
+            # py: "3.12.11"
+          - os: macos-latest
+            py: "3.12.4"
+    runs-on: ${{ matrix.os }}
+
+    steps:
+    # 1) Checkout repository
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    # 2) Install Python 3.12.11
+    - name: Set up Python depending on the OS
+      uses: actions/setup-python@v5
+      with:
+        python-version: ${{ matrix.py }}
+
+    - name: Show requirements file
+      run: cat requirements.txt
+
+    # 3) Install pip dependencies (from requirements.txt)
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+
+    # 4) (Optional)  Run tests
+    # - name: Run unit tests
+    #   run: pytest tests/ --maxfail=1 --disable-warnings -q
+
+    # 5) Build with PyInstaller (one-dir, spec-driven)
+    - name: Build (PyInstaller one-dir)
+      shell: bash                    # script uses bash syntax; Windows defaults to PowerShell
+      run: |
+        pyinstaller log_analyzer.spec
+
+        # macOS: zip the .app so it’s a single downloadable file
+        if [[ "${{ runner.os }}" == "macOS" ]]; then
+          APP_PATH=$(find dist -name "*.app" -maxdepth 1 -print -quit)
+          zip_name="app-macos.zip"
+          ditto -c -k --sequesterRsrc --keepParent "$APP_PATH" "dist/$zip_name"
+        fi
+
+    # 6) Upload the artifact produced on each OS
+    - name: Upload artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: ${{ matrix.os }}-build
+        path: |
+          # On Windows upload the whole dist directory (contains EXE + DLLs)
+          ${{ runner.os == 'Windows' && 'dist/**' || '' }}
+          # On macOS upload the zipped .app bundle
+          ${{ runner.os == 'macOS'  && 'dist/app-macos.zip' || '' }}

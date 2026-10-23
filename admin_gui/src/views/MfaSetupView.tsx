@@ -1,16 +1,27 @@
-import { useEffect, useRef, useState } from "react";
+import {
+  useEffect,
+  useRef,
+  useState,
+} from "react";
+
 import { QRCodeSVG } from "qrcode.react";
+
 import {
   TotpMultiFactorGenerator,
   type TotpSecret,
   multiFactor,
   signOut,
 } from "firebase/auth";
-import { Loader2, ShieldCheck } from "lucide-react";
+
+import {
+  Loader2,
+  ShieldCheck,
+} from "lucide-react";
 
 import { MSG } from "@/lib/constants";
 import { useAuth } from "@/contexts/AuthContext";
 import { auth } from "@/lib/firebase";
+
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -20,14 +31,26 @@ export function MfaSetupView() {
 
   // Keep the TotpSecret object in a ref because it is needed
   // during enrollment but does not need to trigger UI updates.
-  const secretRef = useRef<TotpSecret | null>(null);
+  const secretRef =
+    useRef<TotpSecret | null>(null);
 
-  const [qrUri, setQrUri] = useState<string | null>(null);
-  const [secretKey, setSecretKey] = useState<string | null>(null);
-  const [code, setCode] = useState("");
-  const [error, setError] = useState("");
-  const [submitting, setSubmitting] = useState(false);
-  const [initError, setInitError] = useState("");
+  const [qrUri, setQrUri] =
+    useState<string | null>(null);
+
+  const [secretKey, setSecretKey] =
+    useState<string | null>(null);
+
+  const [code, setCode] =
+    useState("");
+
+  const [error, setError] =
+    useState("");
+
+  const [submitting, setSubmitting] =
+    useState(false);
+
+  const [initError, setInitError] =
+    useState("");
 
   useEffect(() => {
     if (!user) {
@@ -36,14 +59,19 @@ export function MfaSetupView() {
 
     (async () => {
       try {
-        const session = await multiFactor(user).getSession();
+        const session =
+          await multiFactor(user).getSession();
 
         const totpSecret =
-          await TotpMultiFactorGenerator.generateSecret(session);
+          await TotpMultiFactorGenerator.generateSecret(
+            session
+          );
 
         secretRef.current = totpSecret;
 
-        setSecretKey(totpSecret.secretKey);
+        setSecretKey(
+          totpSecret.secretKey
+        );
 
         setQrUri(
           totpSecret.generateQrCodeUrl(
@@ -64,7 +92,10 @@ export function MfaSetupView() {
   ) {
     e.preventDefault();
 
-    if (!secretRef.current || !user) {
+    if (
+      !secretRef.current ||
+      !user
+    ) {
       return;
     }
 
@@ -93,7 +124,9 @@ export function MfaSetupView() {
         "/login?reason=mfa_enrolled"
       );
     } catch {
-      setError(MSG.Auth.MFA_ENROLL_FAILED);
+      setError(
+        MSG.Auth.MFA_ENROLL_FAILED
+      );
       setCode("");
     } finally {
       setSubmitting(false);

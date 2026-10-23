@@ -36,8 +36,7 @@ export function LoginView() {
 
   // Credentials-step state.
   const [email, setEmail] = useState("");
-  const [password, setPassword] =
-    useState("");
+  const [password, setPassword] = useState("");
 
   // The resolver represents a pending Firebase MFA login.
   // It is kept in a ref because changing it does not need
@@ -45,8 +44,7 @@ export function LoginView() {
   const resolverRef =
     useRef<MultiFactorResolver | null>(null);
 
-  const [totpCode, setTotpCode] =
-    useState("");
+  const [totpCode, setTotpCode] = useState("");
 
   const [error, setError] = useState("");
   const [submitting, setSubmitting] =
@@ -63,7 +61,7 @@ export function LoginView() {
   // decide whether email verification, MFA setup, or backend
   // verification is still required.
   if (!loading && user) {
-    return <Navigate to="/" replace />;
+    return <Navigate to="/orgs" replace />;
   }
 
   async function handleEmailLogin(
@@ -162,7 +160,7 @@ export function LoginView() {
       // Firebase user
       //   → email verification
       //   → MFA enrollment state
-      //   → backend /api/profile verification
+      //   → backend verification
       //   → AuthGuard
       await resolver.resolveSignIn(assertion);
     } catch (err: unknown) {

@@ -1,4 +1,5 @@
 import { initializeApp } from "firebase/app";
+
 import {
   getAuth,
   browserLocalPersistence,
@@ -13,13 +14,21 @@ const firebaseConfig = {
 };
 
 const app = initializeApp(firebaseConfig);
+
 export const auth = getAuth(app);
 
 // Keep the authenticated Firebase session across page refreshes
 // and browser restarts. Explicit sign-out or Firebase revocation
 // ends the session.
-setPersistence(auth, browserLocalPersistence);
+setPersistence(
+  auth,
+  browserLocalPersistence
+);
 
-export const googleProvider = new GoogleAuthProvider();
+export const googleProvider =
+  new GoogleAuthProvider();
 
-export { signInWithEmailAndPassword, signInWithPopup } from "firebase/auth";
+export {
+  signInWithEmailAndPassword,
+  signInWithPopup,
+} from "firebase/auth";

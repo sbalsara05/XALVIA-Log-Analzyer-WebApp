@@ -1,6 +1,14 @@
 import { lazy, useEffect, useState } from "react";
-import { useNavigate, Navigate, Outlet } from "react-router-dom";
-import { signOut, sendEmailVerification } from "firebase/auth";
+import {
+  useNavigate,
+  Navigate,
+  Outlet,
+} from "react-router-dom";
+
+import {
+  signOut,
+  sendEmailVerification,
+} from "firebase/auth";
 
 import { auth } from "@/lib/firebase";
 import { useAuth } from "@/contexts/AuthContext";
@@ -26,13 +34,13 @@ export function AuthGuard() {
     user,
     loading,
     emailVerified,
-    backendVerified,
+    hasAdminAccess,
     mfaEnrolled,
     accessCheckError,
   } = useAuth();
 
-  // AuthContext keeps loading=true until Firebase auth state
-  // and any required backend verification are fully resolved.
+  // Wait until Firebase auth state and any required
+  // backend access verification are fully resolved.
   if (loading) {
     return (
       <div className="flex h-screen items-center justify-center bg-background">
@@ -47,20 +55,22 @@ export function AuthGuard() {
   }
 
   // Email verification must be completed before MFA setup
-  // and backend verification can proceed.
+  // and backend access verification can proceed.
   if (emailVerified === false) {
     return <VerifyEmailView />;
   }
 
-  // MFA enrollment is required before backend identity verification.
+  // MFA enrollment is required before backend access verification.
   if (mfaEnrolled === false) {
     return <MfaSetupView />;
   }
 
-  // Defensive fallback: once loading is false and Firebase-side
-  // requirements are satisfied, backend verification should normally
-  // already be resolved.
-  if (backendVerified === null && !accessCheckError) {
+  // Once Firebase-side requirements are satisfied,
+  // the backend access check should resolve to true/false.
+  if (
+    hasAdminAccess === null &&
+    !accessCheckError
+  ) {
     return (
       <div className="flex h-screen items-center justify-center bg-background">
         <Loader2 className="h-6 w-6 animate-spin text-primary" />
@@ -72,26 +82,34 @@ export function AuthGuard() {
     return <AccessCheckErrorView />;
   }
 
-  if (backendVerified === false) {
+  if (hasAdminAccess === false) {
     return <AccessDeniedView />;
   }
 
-  // All authentication and backend checks passed.
-  // Render the protected child route selected by React Router.
+  // All authentication and access checks passed.
   return <Outlet />;
 }
 
 function VerifyEmailView() {
   const { reloadUser } = useAuth();
 
-  const [checking, setChecking] = useState(false);
-  const [resending, setResending] = useState(false);
-  const [stillUnverified, setStillUnverified] = useState(false);
-  const [resendCooldown, setResendCooldown] = useState(false);
+  const [checking, setChecking] =
+    useState(false);
+
+  const [resending, setResending] =
+    useState(false);
+
+  const [stillUnverified, setStillUnverified] =
+    useState(false);
+
+  const [resendCooldown, setResendCooldown] =
+    useState(false);
 
   useEffect(() => {
     if (auth.currentUser) {
-      sendEmailVerification(auth.currentUser).catch(() => {});
+      sendEmailVerification(
+        auth.currentUser
+      ).catch(() => {});
     }
   }, []);
 
@@ -109,13 +127,18 @@ function VerifyEmailView() {
   }
 
   async function handleResend() {
-    if (!auth.currentUser || resendCooldown) {
+    if (
+      !auth.currentUser ||
+      resendCooldown
+    ) {
       return;
     }
 
     setResending(true);
 
-    await sendEmailVerification(auth.currentUser).catch(() => {});
+    await sendEmailVerification(
+      auth.currentUser
+    ).catch(() => {});
 
     setResending(false);
     setResendCooldown(true);
@@ -153,7 +176,10 @@ function VerifyEmailView() {
 
           {stillUnverified && (
             <p className="text-sm text-destructive">
-              {MSG.Auth.VERIFY_EMAIL_STILL_UNVERIFIED}
+              {
+                MSG.Auth
+                  .VERIFY_EMAIL_STILL_UNVERIFIED
+              }
             </p>
           )}
 
@@ -174,7 +200,9 @@ function VerifyEmailView() {
               variant="outline"
               className="w-full"
               onClick={handleResend}
-              disabled={resending || resendCooldown}
+              disabled={
+                resending || resendCooldown
+              }
             >
               {resending ? (
                 <Loader2 className="h-4 w-4 animate-spin" />
@@ -278,7 +306,7 @@ function AccessDeniedView() {
 
         <div className="space-y-4 rounded-xl border border-border bg-card p-6 text-center shadow-sm">
           <p className="text-sm text-muted-foreground">
-            {MSG.Auth.NO_APP_ACCESS}
+            {MSG.Auth.NO_ADMIN_ACCESS}
           </p>
 
           <Button

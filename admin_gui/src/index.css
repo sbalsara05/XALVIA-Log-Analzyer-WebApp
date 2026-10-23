@@ -1,0 +1,68 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    /* ── Ricovr brand tokens — kept in sync with style/Theme.qml ── */
+
+    /* background: #F0F2F5  foreground: #1C2026 */
+    --background: 220 14% 95%;
+    --foreground: 220 14% 13%;
+
+    --card: 0 0% 100%;
+    --card-foreground: 220 14% 13%;
+
+    /* border/input: #E1E4E8 */
+    --border: 216 11% 88%;
+    --input: 216 11% 88%;
+
+    /* primary: #5B8DB8 (Pantone 7688-C steel blue) */
+    --primary: 209 36% 54%;
+    --primary-foreground: 0 0% 100%;
+
+    /* secondary = brandPill: #EBF5FB (light blue tint of primary — active nav bg) */
+    --secondary: 205 67% 95%;
+    --secondary-foreground: 209 36% 54%;
+
+    /* muted: #F8F9FB */
+    --muted: 220 25% 98%;
+    --muted-foreground: 220 9% 46%;
+
+    /* accent = brandPill same as secondary — used for hover fills, not the raw mint */
+    --accent: 205 67% 95%;
+    --accent-foreground: 209 36% 54%;
+
+    /* success: #6ECEB2 (Pantone 936-C mint/teal — statusOnline, fileIcon, borderAccent) */
+    --success: 163 42% 62%;
+    --success-foreground: 220 14% 13%;
+
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 0 0% 100%;
+
+    --ring: 209 36% 54%;
+    --radius: 0.5rem;
+
+    --sidebar: 220 14% 8%;
+    --sidebar-foreground: 220 14% 85%;
+    --sidebar-border: 220 14% 14%;
+    --sidebar-accent: 220 14% 14%;
+    --sidebar-accent-foreground: 0 0% 100%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground antialiased;
+    font-family: -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", sans-serif;
+  }
+}
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { @apply bg-transparent; }
+::-webkit-scrollbar-thumb { @apply bg-border rounded-full; }
+::-webkit-scrollbar-thumb:hover { @apply bg-muted-foreground/40; }

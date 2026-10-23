@@ -25,12 +25,11 @@ interface AuthContextValue {
   // null = authentication state has not been resolved yet.
   emailVerified: boolean | null;
 
-  // null = backend identity check has not run or is not applicable yet.
-  // true = backend accepted the authenticated user.
-  // false = backend verification did not succeed.
-  //         Check accessCheckError to distinguish an explicit denial
-  //         from a server/network failure.
-  backendVerified: boolean | null;
+  // null = backend access check has not run yet.
+  // true = backend confirmed admin access.
+  // false = backend explicitly denied access, or the check failed.
+  // accessCheckError distinguishes server/network failures.
+  hasAdminAccess: boolean | null;
 
   // null = authentication state has not been resolved yet.
   // false = user still needs to complete TOTP enrollment.
@@ -47,7 +46,7 @@ const AuthContext = createContext<AuthContextValue>({
   user: null,
   loading: true,
   emailVerified: null,
-  backendVerified: null,
+  hasAdminAccess: null,
   mfaEnrolled: null,
   accessCheckError: false,
   reloadUser: async () => {},
@@ -58,23 +57,28 @@ export function AuthProvider({
 }: {
   children: ReactNode;
 }) {
-  const [user, setUser] = useState<User | null>(null);
+  const [user, setUser] =
+    useState<User | null>(null);
 
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] =
+    useState(true);
 
-  const [emailVerified, setEmailVerified] = useState<boolean | null>(null);
+  const [emailVerified, setEmailVerified] =
+    useState<boolean | null>(null);
 
-  const [backendVerified, setBackendVerified] = useState<boolean | null>(null);
+  const [hasAdminAccess, setHasAdminAccess] =
+    useState<boolean | null>(null);
 
-  const [mfaEnrolled, setMfaEnrolled] = useState<boolean | null>(null);
+  const [mfaEnrolled, setMfaEnrolled] =
+    useState<boolean | null>(null);
 
-  const [accessCheckError, setAccessCheckError] = useState(false);
+  const [accessCheckError, setAccessCheckError] =
+    useState(false);
 
   useEffect(() => {
     return onAuthStateChanged(
       auth,
       async (firebaseUser) => {
-        // A new Firebase auth state is being processed.
         setLoading(true);
         setUser(firebaseUser);
         setAccessCheckError(false);
@@ -90,59 +94,52 @@ export function AuthProvider({
 
           setMfaEnrolled(enrolled);
 
-          // Authentication gates are evaluated in order:
+          // Authentication gates:
           // 1. email verification
           // 2. MFA enrollment
-          // 3. backend identity verification
-          //
-          // Each step short-circuits so the UI can render
-          // the correct blocking state before later checks run.
+          // 3. backend access verification
           if (
             firebaseUser.emailVerified &&
             enrolled
           ) {
             try {
               await apiClient.get(
-                "/api/profile"
+                "/api/me/access"
               );
 
-              setBackendVerified(true);
+              setHasAdminAccess(true);
             } catch (err) {
-              // Distinguish an explicit backend denial from
-              // a server/network failure so AuthGuard can
-              // present the correct message.
               if (
                 err instanceof ApiError &&
                 err.status === 403
               ) {
-                setBackendVerified(false);
+                setHasAdminAccess(false);
               } else {
                 setAccessCheckError(true);
-                setBackendVerified(false);
+                setHasAdminAccess(false);
               }
             }
           } else {
-            // Backend verification should not run until the
-            // Firebase-side requirements are satisfied.
-            setBackendVerified(null);
+            // Do not check backend access until the
+            // Firebase-side requirements are complete.
+            setHasAdminAccess(null);
           }
         } else {
           // Clear all derived auth state after sign-out.
           setEmailVerified(null);
-          setBackendVerified(null);
+          setHasAdminAccess(null);
           setMfaEnrolled(null);
           setAccessCheckError(false);
         }
 
-        // Auth initialization is complete only after any required
-        // backend verification has also finished.
         setLoading(false);
       }
     );
   }, []);
 
-  // reload() mutates auth.currentUser in place without triggering
-  // onAuthStateChanged, so emailVerified must be refreshed manually.
+  // Firebase reload() updates auth.currentUser in place
+  // without necessarily triggering onAuthStateChanged,
+  // so refresh all derived authentication state here.
   async function reloadUser() {
     const currentUser = auth.currentUser;
 
@@ -156,18 +153,21 @@ export function AuthProvider({
     try {
       await currentUser.reload();
 
-      const refreshedUser = auth.currentUser;
+      const refreshedUser =
+        auth.currentUser;
 
       if (!refreshedUser) {
         setUser(null);
         setEmailVerified(null);
         setMfaEnrolled(null);
-        setBackendVerified(null);
+        setHasAdminAccess(null);
         return;
       }
 
       setUser(refreshedUser);
-      setEmailVerified(refreshedUser.emailVerified);
+      setEmailVerified(
+        refreshedUser.emailVerified
+      );
 
       const enrolled =
         multiFactor(refreshedUser)
@@ -175,29 +175,29 @@ export function AuthProvider({
 
       setMfaEnrolled(enrolled);
 
-      // If the user has now completed all Firebase-side
-      // requirements, immediately continue with backend
-      // identity verification.
       if (
         refreshedUser.emailVerified &&
         enrolled
       ) {
         try {
-          await apiClient.get("/api/profile");
-          setBackendVerified(true);
+          await apiClient.get(
+            "/api/me/access"
+          );
+
+          setHasAdminAccess(true);
         } catch (err) {
           if (
             err instanceof ApiError &&
             err.status === 403
           ) {
-            setBackendVerified(false);
+            setHasAdminAccess(false);
           } else {
             setAccessCheckError(true);
-            setBackendVerified(false);
+            setHasAdminAccess(false);
           }
         }
       } else {
-        setBackendVerified(null);
+        setHasAdminAccess(null);
       }
     } finally {
       setLoading(false);
@@ -210,7 +210,7 @@ export function AuthProvider({
         user,
         loading,
         emailVerified,
-        backendVerified,
+        hasAdminAccess,
         mfaEnrolled,
         accessCheckError,
         reloadUser,
