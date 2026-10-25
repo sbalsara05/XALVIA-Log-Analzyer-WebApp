@@ -77,7 +77,7 @@ GatewayClient(base_url: str, auth_manager: AuthManager)
 |---|---|
 | Auth header | `Authorization: Bearer <idToken>` |
 | Request body | `{"mac_id": "<id>", "files": ["f1.txt", "f2.txt"]}` |
-| **200 OK** | `{"session_id": "YYYYMMDD_HHMMSS_microseconds", "urls": {"f1.txt": "<signed PUT URL>", ...}, "required_headers": {"X-Goog-Content-Length-Range": "0,52428800"}}` |
+| **200 OK** | `{"session_id": "YYYYMMDD_HHMMSS_microseconds", "urls": {"f1.txt": "<signed PUT URL>", ...}, "required_headers": {"X-Goog-Content-Length-Range": "0,52428800", "X-Goog-Meta-Uploaded-By": "<caller uid>"}}` |
 | **400** | `{"error": "mac_id must be a non-empty alphanumeric string"}` or `{"error": "files array must not be empty"}` |
 | **401** | → raises `GatewayUnauthorizedError` |
 | **403** | → raises `GatewayForbiddenError` |

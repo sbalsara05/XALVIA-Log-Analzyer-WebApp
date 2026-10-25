@@ -315,7 +315,6 @@ Or set `GO_GATEWAY_URL` in the PyInstaller bundle's environment before launch.
 │   ├── profile.go                 GET /api/profile
 │   ├── files.go                   GET /api/files, signed-URL endpoints, POST /api/commit
 │   ├── parse.go                   POST /api/parse/device-log + /api/parse/test-log
-│   ├── admin.go                   PUT /api/users/:id/permissions (stub)
 │   └── files_test.go              10 table-driven GCS handler tests (httptest fake GCS)
 ├── middleware/
 │   ├── auth.go                    Firebase Bearer token validation → inject UID
@@ -794,7 +793,6 @@ Complete route table (for both developer and operator reference):
 | `POST` | `/api/commit` | Bearer | RequireWrite | `CommitSession()` | Write `_COMMIT.json` to atomically publish a session |
 | `POST` | `/api/parse/device-log` | Bearer | RequireRead | `ParseDeviceLog()` | Decode binary device event log → `[{key,val}]` |
 | `POST` | `/api/parse/test-log` | Bearer | RequireRead | `ParseTestLog()` | Decode binary test log → `PlotSpec` JSON |
-| `PUT` | `/api/users/:id/permissions` | Bearer | RequireAdmin | `UpdatePermissions()` | (stub — not yet implemented) |
 
 Middleware stack applied to all `/api/*` routes:
 1. `middleware.Auth(authClient)` — validates Firebase ID token; injects UID; 401 on failure
@@ -1084,8 +1082,6 @@ For each handler function in `handlers/`:
 **`files_test.go`** — 10 tests, `fakeGCS` httptest strategy:
 - `fakeGCS(t, bucket, objects)` — starts httptest HTTP server mimicking GCS List + Attrs XML API; sets `STORAGE_EMULATOR_HOST`
 - Full test case table: test name, setup, assertion
-
-**`admin.go`** — `UpdatePermissions` stub; document future intended behaviour
 
 ---
 
