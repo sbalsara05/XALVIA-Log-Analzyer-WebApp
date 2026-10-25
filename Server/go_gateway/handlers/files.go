@@ -8,6 +8,7 @@ import (
 	"log"
 	"net/http"
 	"regexp"
+	"sort"
 	"strings"
 	"time"
 
@@ -25,6 +26,9 @@ var macNormalRe = regexp.MustCompile(`^[0-9A-Z]+$`)
 // uploadedByHeader is the signed upload header that records the uploader's UID.
 // GCS stores x-goog-meta-* headers as object metadata, here under "uploaded-by".
 const uploadedByHeader = "X-Goog-Meta-Uploaded-By"
+
+// uploadedByMetaKey is the ObjectAttrs.Metadata key GCS derives from uploadedByHeader.
+const uploadedByMetaKey = "uploaded-by"
 
 // sessionIDRe matches the gateway's own session_id format:
 // YYYYMMDD_HHMMSS_microseconds  (e.g. "20240101_120000_000001").
@@ -83,6 +87,58 @@ func ListFiles(gcsClient *storage.Client, bucket string) gin.HandlerFunc {
 			files = append(files, e.Name)
 		}
 		c.JSON(http.StatusOK, files)
+	}
+}
+
+// fileMetadataRow is one entry in the GET /api/files/metadata response.
+// SessionID is null for legacy flat files; UploadedBy is null for files
+// uploaded before the gateway started recording the uploader.
+type fileMetadataRow struct {
+	Name        string    `json:"name"`
+	Size        int64     `json:"size"`
+	Updated     time.Time `json:"updated"`
+	ContentType string    `json:"content_type"`
+	SessionID   *string   `json:"session_id"`
+	UploadedBy  *string   `json:"uploaded_by"`
+}
+
+// ListFileMetadata handles GET /api/files/metadata?mac_id=X
+// Returns the same files as ListFiles, sorted by name, with size, last update
+// time, content type, session_id and uploader UID taken from the GCS object
+// that ListFiles / SignedReadURL would serve. One GCS list call per request.
+func ListFileMetadata(gcsClient *storage.Client, bucket string) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		macID, err := normaliseMACForPath(c.Query("mac_id"))
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "mac_id is missing or not a valid MAC address"})
+			return
+		}
+
+		entries, err := collectFiles(c.Request.Context(), gcsClient, bucket, macID)
+		if err != nil {
+			log.Printf("ERROR ListFileMetadata GCS bucket=%s mac_id=%s: %v", bucket, macID, err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "storage error"})
+			return
+		}
+		sort.Slice(entries, func(i, j int) bool { return entries[i].Name < entries[j].Name })
+
+		rows := make([]fileMetadataRow, 0, len(entries))
+		for _, e := range entries {
+			row := fileMetadataRow{
+				Name:        e.Name,
+				Size:        e.Attrs.Size,
+				Updated:     e.Attrs.Updated,
+				ContentType: e.Attrs.ContentType,
+			}
+			if e.SessionID != "" {
+				row.SessionID = &e.SessionID
+			}
+			if uid, ok := e.Attrs.Metadata[uploadedByMetaKey]; ok && uid != "" {
+				row.UploadedBy = &uid
+			}
+			rows = append(rows, row)
+		}
+		c.JSON(http.StatusOK, rows)
 	}
 }
 

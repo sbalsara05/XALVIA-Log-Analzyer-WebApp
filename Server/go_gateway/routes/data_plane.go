@@ -34,6 +34,7 @@ func MountDataPlaneRoutes(r *gin.Engine, env *handlers.Env, db *sql.DB) {
 		readRoutes.Use(middleware.RequireDeviceAccess(db, "read"))
 		{
 			readRoutes.GET("/files", handlers.ListFiles(env.GCSClient, env.GCSBucket))
+			readRoutes.GET("/files/metadata", handlers.ListFileMetadata(env.GCSClient, env.GCSBucket))
 			readRoutes.GET("/signed-url/read", handlers.SignedReadURL(env))
 			readRoutes.POST("/parse/device-log", handlers.ParseDeviceLog())
 			readRoutes.POST("/parse/test-log", handlers.ParseTestLog())
