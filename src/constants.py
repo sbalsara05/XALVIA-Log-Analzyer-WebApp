@@ -24,6 +24,10 @@ COMPANY_LOGO_DIR_STUB = "logo/RICOVR.svg"
 BAUDRATE=115_200
 TIMEOUT=1.0
 
+## Silicon Labs CP2102/CP2102N USB-to-UART bridge on the XALIVA board
+USB_VID=0x10C4
+USB_PID=0xEA60
+
 
 ## --- used in view.py ---
 
