@@ -526,8 +526,8 @@ func TestCreateOrg_DuplicateName_Returns409(t *testing.T) {
 		)
 		return w.Code
 	}
-	if code := create(); code != http.StatusOK {
-		t.Fatalf("first create: want 200, got %d", code)
+	if code := create(); code != http.StatusCreated {
+		t.Fatalf("first create: want 201, got %d", code)
 	}
 	if code := create(); code != http.StatusConflict {
 		t.Fatalf("duplicate create: want 409, got %d", code)
