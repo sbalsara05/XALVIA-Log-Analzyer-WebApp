@@ -519,10 +519,8 @@ func DeleteOrg(db *sql.DB) gin.HandlerFunc {
 		}
 
 		// Prevent deletion of the root org (the single org with no parent).
-		var rootID int
-		if err := db.QueryRowContext(c.Request.Context(),
-			`SELECT id FROM orgs WHERE parent_org_id IS NULL AND deleted_at IS NULL LIMIT 1`,
-		).Scan(&rootID); err != nil {
+		rootID, err := middleware.RootOrgID(db, c)
+		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "root org check failed"})
 			return
 		}
