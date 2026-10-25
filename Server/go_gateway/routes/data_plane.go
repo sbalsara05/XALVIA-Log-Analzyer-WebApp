@@ -26,6 +26,8 @@ func MountDataPlaneRoutes(r *gin.Engine, env *handlers.Env, db *sql.DB) {
 	{
 		// No device context — no device ACL needed.
 		api.GET("/profile", handlers.Profile(db))
+		// Caller's own memberships and effective device access.
+		api.GET("/me/permissions", handlers.MyPermissions(db))
 
 		// ── Read-only device routes ──────────────────────────────────────────
 		readRoutes := api.Group("/")
