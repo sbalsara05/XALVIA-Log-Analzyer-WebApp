@@ -65,64 +65,83 @@ func ListFiles(gcsClient *storage.Client, bucket string) gin.HandlerFunc {
 			return
 		}
 
-		prefix := macID + "/"
-		it := gcsClient.Bucket(bucket).Objects(context.Background(), &storage.Query{Prefix: prefix})
-
-		committedSessions := map[string]bool{}
-		fileLatestSession := map[string]string{} // base_filename → latest session_id seen
-		var legacyFiles []string
-
-		for {
-			attrs, err := it.Next()
-			if err == iterator.Done {
-				break
-			}
-			if err != nil {
-				log.Printf("ERROR ListFiles GCS bucket=%s mac_id=%s: %v", bucket, macID, err)
-				c.JSON(http.StatusInternalServerError, gin.H{"error": "storage error"})
-				return
-			}
-			rel := strings.TrimPrefix(attrs.Name, prefix)
-			parts := strings.SplitN(rel, "/", 2)
-
-			if len(parts) == 1 {
-				// legacy flat file: {mac_id}/{file}
-				if parts[0] != "_COMMIT.json" {
-					legacyFiles = append(legacyFiles, parts[0])
-				}
-			} else {
-				// session file: {mac_id}/{session_id}/{file}
-				sessionID, base := parts[0], parts[1]
-				if base == "_COMMIT.json" {
-					committedSessions[sessionID] = true
-				} else if existing, ok := fileLatestSession[base]; !ok || sessionID > existing {
-					fileLatestSession[base] = sessionID
-				}
-			}
+		entries, err := collectFiles(c.Request.Context(), gcsClient, bucket, macID)
+		if err != nil {
+			log.Printf("ERROR ListFiles GCS bucket=%s mac_id=%s: %v", bucket, macID, err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "storage error"})
+			return
 		}
 
-		// Collect unique base names: legacy files first, then files from their latest
-		// committed session. Legacy files take precedence if a name collides.
-		seen := map[string]bool{}
-		var files []string
-		for _, f := range legacyFiles {
-			if !seen[f] {
-				seen[f] = true
-				files = append(files, f)
-			}
-		}
-		for base, latestSID := range fileLatestSession {
-			if committedSessions[latestSID] && !seen[base] {
-				seen[base] = true
-				files = append(files, base)
-			}
-		}
-
-		if files == nil {
-			files = []string{}
+		files := make([]string, 0, len(entries))
+		for _, e := range entries {
+			files = append(files, e.Name)
 		}
 		c.JSON(http.StatusOK, files)
 	}
+}
+
+// fileEntry is one visible file under a device: its base name, the session it
+// was resolved from ("" for legacy flat files), and the attrs of that object.
+type fileEntry struct {
+	Name      string
+	SessionID string
+	Attrs     *storage.ObjectAttrs
+}
+
+// collectFiles lists {mac_id}/ in one GCS call and returns the files a client
+// should see: legacy flat files first, then each base name from its latest
+// session if that session is committed. Legacy files take precedence if a name
+// collides.
+func collectFiles(ctx context.Context, gcsClient *storage.Client, bucket, macID string) ([]fileEntry, error) {
+	prefix := macID + "/"
+	it := gcsClient.Bucket(bucket).Objects(ctx, &storage.Query{Prefix: prefix})
+
+	committedSessions := map[string]bool{}
+	fileLatest := map[string]fileEntry{} // base_filename → entry from latest session_id seen
+	var legacyFiles []fileEntry
+
+	for {
+		attrs, err := it.Next()
+		if err == iterator.Done {
+			break
+		}
+		if err != nil {
+			return nil, err
+		}
+		rel := strings.TrimPrefix(attrs.Name, prefix)
+		parts := strings.SplitN(rel, "/", 2)
+
+		if len(parts) == 1 {
+			// legacy flat file: {mac_id}/{file}
+			if parts[0] != "_COMMIT.json" {
+				legacyFiles = append(legacyFiles, fileEntry{Name: parts[0], Attrs: attrs})
+			}
+		} else {
+			// session file: {mac_id}/{session_id}/{file}
+			sessionID, base := parts[0], parts[1]
+			if base == "_COMMIT.json" {
+				committedSessions[sessionID] = true
+			} else if existing, ok := fileLatest[base]; !ok || sessionID > existing.SessionID {
+				fileLatest[base] = fileEntry{Name: base, SessionID: sessionID, Attrs: attrs}
+			}
+		}
+	}
+
+	seen := map[string]bool{}
+	var entries []fileEntry
+	for _, e := range legacyFiles {
+		if !seen[e.Name] {
+			seen[e.Name] = true
+			entries = append(entries, e)
+		}
+	}
+	for base, e := range fileLatest {
+		if committedSessions[e.SessionID] && !seen[base] {
+			seen[base] = true
+			entries = append(entries, e)
+		}
+	}
+	return entries, nil
 }
 
 // resolveObjectName returns the full GCS object path for a bare filename under macID.
