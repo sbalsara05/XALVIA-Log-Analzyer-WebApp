@@ -903,7 +903,9 @@ func TestUpsertOrgUser_NewEmail_CreatesAccountAndSendsInvite(t *testing.T) {
 	})
 }
 
-func TestUpsertOrgUser_OOBSendFailure_Returns500(t *testing.T) {
+// The invite email is sent after the DB commit, so a send failure cannot undo
+// the grant: the handler returns 200 with email_warning so the admin can resend.
+func TestUpsertOrgUser_OOBSendFailure_Returns200WithWarning(t *testing.T) {
 	recordResult(t)
 	db := testDB(t)
 	orgID := insertOrg(t, db, "UpsOOBFail_"+t.Name(), nil)
@@ -920,9 +922,24 @@ func TestUpsertOrgUser_OOBSendFailure_Returns500(t *testing.T) {
 		map[string]any{"email": email, "role": "user"},
 		handlers.UpsertOrgUser(db, fb, oob),
 	)
-	if w.Code != http.StatusInternalServerError {
-		t.Fatalf("want 500 when OOB send fails, got %d: %s", w.Code, w.Body.String())
+	if w.Code != http.StatusOK {
+		t.Fatalf("want 200 when OOB send fails after commit, got %d: %s", w.Code, w.Body.String())
 	}
+	var resp struct {
+		Invited      bool   `json:"invited"`
+		EmailWarning string `json:"email_warning"`
+	}
+	decodeJSON(t, w, &resp)
+	if !resp.Invited {
+		t.Error("invited must be true when a new Firebase account was created")
+	}
+	if resp.EmailWarning == "" {
+		t.Error("email_warning must be set when the invite email failed")
+	}
+	t.Cleanup(func() {
+		db.Exec(`DELETE FROM org_users WHERE user_id=$1`, newUID)
+		db.Exec(`DELETE FROM users      WHERE id=$1`, newUID)
+	})
 }
 
 func TestUpsertOrgUser_ExistingFirebaseUser_NeverCallsCreateUser(t *testing.T) {
@@ -1279,7 +1296,7 @@ func TestUpsertOrgUser_Invite_NoDBRowWrittenOnCreateUserFailure(t *testing.T) {
 	}
 }
 
-func TestUpsertOrgUser_Invite_OOBFailure_NoOrgUsersRow(t *testing.T) {
+func TestUpsertOrgUser_Invite_OOBFailure_GrantStillCommitted(t *testing.T) {
 	recordResult(t)
 	db := testDB(t)
 	orgID := insertOrg(t, db, "UpsInvOOBRow_"+t.Name(), nil)
@@ -1296,15 +1313,20 @@ func TestUpsertOrgUser_Invite_OOBFailure_NoOrgUsersRow(t *testing.T) {
 		map[string]any{"email": email, "role": "user"},
 		handlers.UpsertOrgUser(db, fb, oob),
 	)
-	if w.Code != http.StatusInternalServerError {
-		t.Fatalf("want 500 when OOB fails, got %d: %s", w.Code, w.Body.String())
+	if w.Code != http.StatusOK {
+		t.Fatalf("want 200 when OOB fails after commit, got %d: %s", w.Code, w.Body.String())
 	}
-	// The DB transaction is never committed — no org_users row must exist.
-	var count int
-	db.QueryRow(`SELECT COUNT(*) FROM org_users WHERE user_id=$1 AND org_id=$2`, newUID, orgID).Scan(&count)
-	if count != 0 {
-		t.Errorf("org_users row must not exist when OOB send failed; found %d", count)
+	t.Cleanup(func() {
+		db.Exec(`DELETE FROM org_users WHERE user_id=$1`, newUID)
+		db.Exec(`DELETE FROM users      WHERE id=$1`, newUID)
+	})
+	// The transaction commits before the email is sent, so the users and
+	// org_users rows must both exist despite the send failure.
+	var storedEmail string
+	if err := db.QueryRow(`SELECT email FROM users WHERE id=$1 AND deleted_at IS NULL`, newUID).Scan(&storedEmail); err != nil {
+		t.Fatalf("users row must exist after OOB failure: %v", err)
 	}
+	activeOrgUser(t, db, newUID, orgID)
 }
 
 func TestUpsertOrgUser_Invite_FirebaseLookupTransientError_Returns500_NeverInvites(t *testing.T) {
