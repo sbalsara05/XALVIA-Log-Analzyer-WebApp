@@ -15,10 +15,16 @@ import (
 	"github.com/gin-gonic/gin"
 	"google.golang.org/api/iamcredentials/v1"
 	"google.golang.org/api/iterator"
+
+	"ricovr/gateway/middleware"
 )
 
 // macNormalRe matches any non-empty alphanumeric device ID (upper-case after normalisation).
 var macNormalRe = regexp.MustCompile(`^[0-9A-Z]+$`)
+
+// uploadedByHeader is the signed upload header that records the uploader's UID.
+// GCS stores x-goog-meta-* headers as object metadata, here under "uploaded-by".
+const uploadedByHeader = "X-Goog-Meta-Uploaded-By"
 
 // sessionIDRe matches the gateway's own session_id format:
 // YYYYMMDD_HHMMSS_microseconds  (e.g. "20240101_120000_000001").
@@ -239,7 +245,7 @@ func SignedReadURL(env *Env) gin.HandlerFunc {
 // Generates a new gateway-owned session_id, signs a PUT URL for each filename,
 // and returns both so the client can upload directly to GCS then commit in one
 // subsequent call — no separate session/start round-trip needed.
-// Response: {"session_id": "S", "urls": {"f1.hex": "...", "f2.hex": "..."}}
+// Response: {"session_id": "S", "urls": {"f1.hex": "...", "f2.hex": "..."}, "required_headers": {...}}
 func SignedUploadURL(env *Env) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		var body struct {
@@ -268,8 +274,13 @@ func SignedUploadURL(env *Env) gin.HandlerFunc {
 
 		signBytes := signBytesFunc(env.IAMService, env.ServiceAccountEmail)
 
-		// Headers the client must include verbatim in each PUT request.
-		signedHeaders := []string{"X-Goog-Content-Length-Range: 0,52428800"}
+		// Headers the client must include verbatim in each PUT request. They are
+		// part of the signature, so the client cannot drop or change them. The
+		// uploader UID is stored as GCS object metadata ("uploaded-by").
+		signedHeaders := []string{
+			"X-Goog-Content-Length-Range: 0,52428800",
+			uploadedByHeader + ": " + c.GetString(middleware.ContextKeyUID),
+		}
 		requiredHeaders := make(map[string]string, len(signedHeaders))
 		for _, h := range signedHeaders {
 			if parts := strings.SplitN(h, ": ", 2); len(parts) == 2 {
@@ -329,9 +340,10 @@ func CommitSession(gcsClient *storage.Client, bucket string) gin.HandlerFunc {
 		}
 
 		commit := map[string]any{
-			"session_id": sessionID,
-			"timestamp":  time.Now().UTC().Format(time.RFC3339),
-			"files":      files,
+			"session_id":  sessionID,
+			"timestamp":   time.Now().UTC().Format(time.RFC3339),
+			"files":       files,
+			"uploaded_by": c.GetString(middleware.ContextKeyUID),
 		}
 		data, _ := json.Marshal(commit)
 
