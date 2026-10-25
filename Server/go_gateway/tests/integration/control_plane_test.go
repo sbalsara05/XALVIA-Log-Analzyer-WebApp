@@ -108,14 +108,16 @@ func ensureSystemUser(t *testing.T, db *sql.DB) {
 	}
 }
 
-// insertUser inserts a users row with added_by = systemUID.
+// insertUser inserts a users row with added_by = systemUID. A row left behind
+// by an earlier run (hard delete blocked by an FK, so still soft-deleted) is
+// revived, so every test starts from an active user.
 func insertUser(t *testing.T, db *sql.DB, id, email string) {
 	t.Helper()
 	ensureSystemUser(t, db)
 	_, err := db.Exec(`
 		INSERT INTO users (id, email, added_by)
 		VALUES ($1, $2, $3)
-		ON CONFLICT (id) DO UPDATE SET email = EXCLUDED.email`,
+		ON CONFLICT (id) DO UPDATE SET email = EXCLUDED.email, deleted_at = NULL, removed_by = NULL`,
 		id, email, systemUID,
 	)
 	if err != nil {
@@ -519,6 +521,9 @@ func TestCreateOrg_DuplicateName_Returns409(t *testing.T) {
 	grantMembership(t, db, callerUID, parentID, "admin", true, true)
 
 	name := "CODupChild_" + t.Name()
+	// The created child references the caller (added_by) and the parent, so it
+	// must go before their cleanups run.
+	t.Cleanup(func() { db.Exec(`DELETE FROM orgs WHERE parent_org_id=$1`, parentID) })
 	create := func() int {
 		w := callHandler(http.MethodPost, "/api/orgs", callerUID, nil,
 			map[string]any{"name": name, "parent_org_id": parentID},
