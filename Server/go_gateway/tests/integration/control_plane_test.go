@@ -2829,14 +2829,14 @@ func TestAddDevice_AdminCanAdd(t *testing.T) {
 	grantMembership(t, db, uid, orgID, "admin", true, true)
 	t.Cleanup(func() { db.Exec(`DELETE FROM devices WHERE id = $1`, "AABBCCDDEEFF") })
 
-	w := callDeviceAdd(db, uid, orgID, "AA:BB:CC:DD:EE:FF")
+	w := callDeviceAdd(db, uid, orgID, "aabbccddeeff")
 	if w.Code != http.StatusCreated {
 		t.Fatalf("want 201, got %d: %s", w.Code, w.Body.String())
 	}
 	var resp map[string]any
 	decodeJSON(t, w, &resp)
 	if resp["id"] != "AABBCCDDEEFF" {
-		t.Errorf("want normalised MAC AABBCCDDEEFF, got %v", resp["id"])
+		t.Errorf("want upper-cased device ID AABBCCDDEEFF, got %v", resp["id"])
 	}
 }
 
@@ -2867,7 +2867,7 @@ func TestAddDevice_AncestorAdminCanAdd(t *testing.T) {
 	grantMembership(t, db, uid, parentID, "admin", true, true)
 	t.Cleanup(func() { db.Exec(`DELETE FROM devices WHERE id = $1`, "BBCCDDEEFF00") })
 
-	w := callDeviceAdd(db, uid, childID, "BB:CC:DD:EE:FF:00")
+	w := callDeviceAdd(db, uid, childID, "BBCCDDEEFF00")
 	if w.Code != http.StatusCreated {
 		t.Fatalf("want 201, got %d: %s", w.Code, w.Body.String())
 	}
@@ -2883,7 +2883,7 @@ func TestAddDevice_Conflict_ActiveSameOrg(t *testing.T) {
 	grantMembership(t, db, uid, orgID, "admin", true, true)
 	insertDevice(t, db, "CCDDEEFF0011", orgID)
 
-	w := callDeviceAdd(db, uid, orgID, "CC:DD:EE:FF:00:11")
+	w := callDeviceAdd(db, uid, orgID, "CCDDEEFF0011")
 	if w.Code != http.StatusConflict {
 		t.Errorf("want 409, got %d: %s", w.Code, w.Body.String())
 	}
@@ -2901,7 +2901,7 @@ func TestAddDevice_Conflict_ActiveOtherOrg(t *testing.T) {
 	grantMembership(t, db, uid, org2ID, "admin", true, true)
 	insertDevice(t, db, "DDEEFF001122", org1ID)
 
-	w := callDeviceAdd(db, uid, org2ID, "DD:EE:FF:00:11:22")
+	w := callDeviceAdd(db, uid, org2ID, "DDEEFF001122")
 	if w.Code != http.StatusConflict {
 		t.Errorf("want 409, got %d: %s", w.Code, w.Body.String())
 	}
