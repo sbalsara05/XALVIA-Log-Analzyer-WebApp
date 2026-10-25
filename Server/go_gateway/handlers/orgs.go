@@ -314,8 +314,24 @@ func UpsertOrgUser(db *sql.DB, authClient FirebaseUserAdmin, oob OOBSender) gin.
 			return
 
 		case firebaseExists && !dbExists:
-			// Case 3: Firebase account exists but never added to our DB.
-			// Add the DB record; no invite email (user already has Firebase credentials).
+			// Case 3: Firebase account exists but has no active DB record.
+			// If its UID belongs to a soft-deleted user, the account was removed
+			// on purpose — 404 rather than reopening it (and rather than
+			// colliding with users_pkey on insert).
+			var deleted bool
+			if err := db.QueryRowContext(ctx,
+				`SELECT EXISTS (SELECT 1 FROM users WHERE id = $1 AND deleted_at IS NOT NULL)`,
+				fbUser.UID,
+			).Scan(&deleted); err != nil {
+				log.Printf("UpsertOrgUser: deleted-user lookup failed uid=%s: %v", fbUser.UID, err)
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "user lookup failed"})
+				return
+			}
+			if deleted {
+				c.JSON(http.StatusNotFound, gin.H{"error": "user has been deleted"})
+				return
+			}
+			// Never added to our DB: add the record; no invite email (user already has Firebase credentials).
 
 		case dbUID == fbUser.UID:
 			// Case 4 (match): user fully in sync — proceed to org_users update only.
