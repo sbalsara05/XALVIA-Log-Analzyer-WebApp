@@ -39,21 +39,52 @@ export const MSG = {
   },
 
   Auth: {
-    SESSION_EXPIRED:   "Your session expired. Please sign in again.",
-    NO_ADMIN_ACCESS:   "This account does not have admin access to any organization. Contact a Ricovr administrator.",
-    ACCESS_CHECK_ERROR: "Could not verify your access — this may be a temporary server issue. Try again or sign out and back in.",
-    SIGN_IN_TITLE:     "Ricovr Admin",
-    SIGN_IN_SUBTITLE:  "Sign in to your admin account",
-    MFA_SUBTITLE:      "Enter the 6-digit code from your authenticator app",
-    MFA_SETUP_TITLE:   "Secure your account",
-    MFA_SETUP_BODY:    "Scan this QR code with your authenticator app (Google Authenticator, Authy, etc.), then enter the 6-digit code to confirm.",
-    MFA_ENROLLED:      "Authenticator app connected. You can now access the dashboard.",
-    MFA_ENROLLED_BANNER: "Authenticator connected. Sign in with your 6-digit code to continue.",
-    MFA_ENROLL_FAILED: "Code verification failed. Check your authenticator app and try again.",
-    VERIFY_EMAIL_TITLE:           "Verify Your Email",
-    VERIFY_EMAIL_BODY:            "We sent a verification link to your inbox. Click it, then return here.",
-    VERIFY_EMAIL_DONE:            "I've Verified My Email",
-    VERIFY_EMAIL_RESEND:          "Resend verification email",
-    VERIFY_EMAIL_STILL_UNVERIFIED: "Email not yet verified. Please check your inbox and try again.",
+    SESSION_EXPIRED:
+      "Your session expired. Please sign in again.",
+
+    NO_ADMIN_ACCESS:
+      "This account does not have admin access to any organization. Contact a Ricovr administrator.",
+
+    ACCESS_CHECK_ERROR:
+      "Could not verify your access — this may be a temporary server issue. Try again or sign out and back in.",
+
+    SIGN_IN_TITLE:
+      "Ricovr Admin",
+
+    SIGN_IN_SUBTITLE:
+      "Sign in to your admin account",
+
+    MFA_SUBTITLE:
+      "Enter the 6-digit code from your authenticator app",
+
+    MFA_SETUP_TITLE:
+      "Secure your account",
+
+    MFA_SETUP_BODY:
+      "Scan this QR code with your authenticator app (Google Authenticator, Authy, etc.), then enter the 6-digit code to confirm.",
+
+    MFA_ENROLLED:
+      "Authenticator app connected. You can now access the dashboard.",
+
+    MFA_ENROLLED_BANNER:
+      "Authenticator connected. Sign in with your 6-digit code to continue.",
+
+    MFA_ENROLL_FAILED:
+      "Code verification failed. Check your authenticator app and try again.",
+
+    VERIFY_EMAIL_TITLE:
+      "Verify Your Email",
+
+    VERIFY_EMAIL_BODY:
+      "We sent a verification link to your inbox. Click it, then return here.",
+
+    VERIFY_EMAIL_DONE:
+      "I've Verified My Email",
+
+    VERIFY_EMAIL_RESEND:
+      "Resend verification email",
+
+    VERIFY_EMAIL_STILL_UNVERIFIED:
+      "Email not yet verified. Please check your inbox and try again.",
   },
 } as const;

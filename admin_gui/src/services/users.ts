@@ -26,17 +26,23 @@ export interface UpsertUserResponse {
 }
 
 export const usersService = {
-  listByOrg: async (orgId: number): Promise<OrgUser[]> => {
-    const res = await apiClient.get(`/api/orgs/${orgId}/users`);
-    return res.data;
+  listByOrg: async (
+    orgId: number
+  ): Promise<OrgUser[]> => {
+    return apiClient.get<OrgUser[]>(`/api/orgs/${orgId}/users`);
   },
 
-  upsert: async (orgId: number, payload: UpsertUserPayload): Promise<UpsertUserResponse> => {
-    const res = await apiClient.post(`/api/orgs/${orgId}/users`, payload);
-    return res.data;
+  upsert: async (
+    orgId: number,
+    payload: UpsertUserPayload
+  ): Promise<UpsertUserResponse> => {
+    return apiClient.post<UpsertUserResponse>(`/api/orgs/${orgId}/users`, payload);
   },
 
-  revoke: async (orgId: number, userId: string): Promise<void> => {
+  revoke: async (
+    orgId: number,
+    userId: string
+  ): Promise<void> => {
     await apiClient.delete(`/api/orgs/${orgId}/users/${userId}`);
   },
 };
