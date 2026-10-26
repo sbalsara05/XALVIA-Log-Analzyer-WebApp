@@ -8,7 +8,7 @@
 
 ## Device Identification
 
-`detect_ports()` calls `serial.tools.list_ports.comports()` and filters to ports whose `description` contains `"CP210"` (the Silicon Labs CP2102 identifier). The filtered list of port names (e.g. `"COM3"`, `"/dev/ttyUSB0"`) is returned to the caller.
+`detect_ports()` calls `serial.tools.list_ports.comports()` and filters to ports whose USB VID/PID match the Silicon Labs CP2102/CP2102N bridge (`constants.USB_VID` / `constants.USB_PID`, `10C4:EA60`). The driver-supplied `description` is not used because it varies by driver and OS language. The filtered list of port names (e.g. `"COM3"`, `"/dev/ttyUSB0"`) is returned to the caller.
 
 ---
 
