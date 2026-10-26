@@ -9,11 +9,14 @@ import (
 
 // rootOrgQuery finds the single org with no parent (the tree root).
 // There is exactly one such org; the schema has no API to create a second.
-const rootOrgQuery = `SELECT id FROM orgs WHERE parent_org_id IS NULL AND deleted_at IS NULL LIMIT 1`
+// ORDER BY id keeps the answer deterministic if extra parentless orgs exist
+// (e.g. inserted directly in tests): without it Postgres scans the root-name
+// index and returns whichever root sorts first alphabetically.
+const rootOrgQuery = `SELECT id FROM orgs WHERE parent_org_id IS NULL AND deleted_at IS NULL ORDER BY id LIMIT 1`
 
-// rootOrgID resolves the root org ID from the database. Returns 0 and an error
+// RootOrgID resolves the root org ID from the database. Returns 0 and an error
 // if the query fails or no root org exists.
-func rootOrgID(db *sql.DB, c *gin.Context) (int, error) {
+func RootOrgID(db *sql.DB, c *gin.Context) (int, error) {
 	var id int
 	err := db.QueryRowContext(c.Request.Context(), rootOrgQuery).Scan(&id)
 	return id, err
@@ -30,7 +33,7 @@ func RequireRootOrgAdmin(db *sql.DB) gin.HandlerFunc {
 			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "forbidden"})
 			return
 		}
-		orgID, err := rootOrgID(db, c)
+		orgID, err := RootOrgID(db, c)
 		if err != nil {
 			c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"error": "auth check failed"})
 			return
