@@ -26,12 +26,15 @@ func MountDataPlaneRoutes(r *gin.Engine, env *handlers.Env, db *sql.DB) {
 	{
 		// No device context — no device ACL needed.
 		api.GET("/profile", handlers.Profile(db))
+		// Caller's own memberships and effective device access.
+		api.GET("/me/permissions", handlers.MyPermissions(db))
 
 		// ── Read-only device routes ──────────────────────────────────────────
 		readRoutes := api.Group("/")
 		readRoutes.Use(middleware.RequireDeviceAccess(db, "read"))
 		{
 			readRoutes.GET("/files", handlers.ListFiles(env.GCSClient, env.GCSBucket))
+			readRoutes.GET("/files/metadata", handlers.ListFileMetadata(env.GCSClient, env.GCSBucket))
 			readRoutes.GET("/signed-url/read", handlers.SignedReadURL(env))
 			readRoutes.POST("/parse/device-log", handlers.ParseDeviceLog())
 			readRoutes.POST("/parse/test-log", handlers.ParseTestLog())

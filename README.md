@@ -136,9 +136,9 @@ XALIVA_Log_Analyzer/
         │   ├── config/config.go           Typed env-var config (SERVER_MODE, DATABASE_URL, CORS_ORIGINS, …)
         │   └── db/db.go                   DB connection pool (DB_MAX_OPEN_CONNS, DB_MAX_IDLE_CONNS)
         ├── handlers/                      HTTP handler functions
-        │   ├── admin.go                   CheckAdminAccess (GET /api/me/access)
         │   ├── devices.go                 ListOrgDevices, AddDevice, RemoveDevice
-        │   ├── orgs.go                    Org CRUD handlers (CreateOrg, DeleteOrg, ListOrgs, UpsertOrgUser, …)
+        │   ├── orgs.go                    Org CRUD handlers (CheckAdminAccess, CreateOrg, DeleteOrg, ListOrgs, UpsertOrgUser, …)
+        │   ├── me.go                      MyPermissions (GET /api/me/permissions)
         │   ├── oob.go                     OOBSender interface + FirebaseOOBSender (invite emails on new-user creation)
         │   └── files.go / parse.go / profile.go / health.go / files_test.go
         └── middleware/                    Auth + device-access + org-admin + rate-limit
@@ -599,7 +599,9 @@ The gateway runs in one of three modes (`SERVER_MODE`): `DATA_PLANE`, `CONTROL_P
 |--------|------|------|----------|---------|-------------|
 | `GET` | `/health` | None | None | `Health()` | Liveness probe — `{"status":"ok"}` |
 | `GET` | `/api/profile` | Bearer | — | `Profile()` | Returns uid and email from the `users` table |
+| `GET` | `/api/me/permissions` | Bearer | - | `MyPermissions()` | Caller's org memberships and every reachable device with effective `can_read` / `can_upload` |
 | `GET` | `/api/files` | Bearer | RequireRead | `ListFiles()` | List committed filenames for `?mac_id=X` |
+| `GET` | `/api/files/metadata` | Bearer | RequireRead | `ListFileMetadata()` | Same files as `/api/files` with size, updated, content type, session ID and uploader |
 | `GET` | `/api/signed-url/read` | Bearer | RequireRead | `SignedReadURL()` | 15-min GCS GET signed URL for one file |
 | `POST` | `/api/signed-url/upload` | Bearer | RequireWrite | `SignedUploadURL()` | Generate session + PUT signed URLs for file list |
 | `POST` | `/api/commit` | Bearer | RequireWrite | `CommitSession()` | Write `_COMMIT.json` to atomically publish a session |

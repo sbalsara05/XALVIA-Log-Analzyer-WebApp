@@ -8,6 +8,7 @@ import (
 	"log"
 	"net/http"
 	"regexp"
+	"sort"
 	"strings"
 	"time"
 
@@ -15,10 +16,19 @@ import (
 	"github.com/gin-gonic/gin"
 	"google.golang.org/api/iamcredentials/v1"
 	"google.golang.org/api/iterator"
+
+	"ricovr/gateway/middleware"
 )
 
 // macNormalRe matches any non-empty alphanumeric device ID (upper-case after normalisation).
 var macNormalRe = regexp.MustCompile(`^[0-9A-Z]+$`)
+
+// uploadedByHeader is the signed upload header that records the uploader's UID.
+// GCS stores x-goog-meta-* headers as object metadata, here under "uploaded-by".
+const uploadedByHeader = "X-Goog-Meta-Uploaded-By"
+
+// uploadedByMetaKey is the ObjectAttrs.Metadata key GCS derives from uploadedByHeader.
+const uploadedByMetaKey = "uploaded-by"
 
 // sessionIDRe matches the gateway's own session_id format:
 // YYYYMMDD_HHMMSS_microseconds  (e.g. "20240101_120000_000001").
@@ -65,64 +75,135 @@ func ListFiles(gcsClient *storage.Client, bucket string) gin.HandlerFunc {
 			return
 		}
 
-		prefix := macID + "/"
-		it := gcsClient.Bucket(bucket).Objects(context.Background(), &storage.Query{Prefix: prefix})
-
-		committedSessions := map[string]bool{}
-		fileLatestSession := map[string]string{} // base_filename → latest session_id seen
-		var legacyFiles []string
-
-		for {
-			attrs, err := it.Next()
-			if err == iterator.Done {
-				break
-			}
-			if err != nil {
-				log.Printf("ERROR ListFiles GCS bucket=%s mac_id=%s: %v", bucket, macID, err)
-				c.JSON(http.StatusInternalServerError, gin.H{"error": "storage error"})
-				return
-			}
-			rel := strings.TrimPrefix(attrs.Name, prefix)
-			parts := strings.SplitN(rel, "/", 2)
-
-			if len(parts) == 1 {
-				// legacy flat file: {mac_id}/{file}
-				if parts[0] != "_COMMIT.json" {
-					legacyFiles = append(legacyFiles, parts[0])
-				}
-			} else {
-				// session file: {mac_id}/{session_id}/{file}
-				sessionID, base := parts[0], parts[1]
-				if base == "_COMMIT.json" {
-					committedSessions[sessionID] = true
-				} else if existing, ok := fileLatestSession[base]; !ok || sessionID > existing {
-					fileLatestSession[base] = sessionID
-				}
-			}
+		entries, err := collectFiles(c.Request.Context(), gcsClient, bucket, macID)
+		if err != nil {
+			log.Printf("ERROR ListFiles GCS bucket=%s mac_id=%s: %v", bucket, macID, err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "storage error"})
+			return
 		}
 
-		// Collect unique base names: legacy files first, then files from their latest
-		// committed session. Legacy files take precedence if a name collides.
-		seen := map[string]bool{}
-		var files []string
-		for _, f := range legacyFiles {
-			if !seen[f] {
-				seen[f] = true
-				files = append(files, f)
-			}
-		}
-		for base, latestSID := range fileLatestSession {
-			if committedSessions[latestSID] && !seen[base] {
-				seen[base] = true
-				files = append(files, base)
-			}
-		}
-
-		if files == nil {
-			files = []string{}
+		files := make([]string, 0, len(entries))
+		for _, e := range entries {
+			files = append(files, e.Name)
 		}
 		c.JSON(http.StatusOK, files)
 	}
+}
+
+// fileMetadataRow is one entry in the GET /api/files/metadata response.
+// SessionID is null for legacy flat files; UploadedBy is null for files
+// uploaded before the gateway started recording the uploader.
+type fileMetadataRow struct {
+	Name        string    `json:"name"`
+	Size        int64     `json:"size"`
+	Updated     time.Time `json:"updated"`
+	ContentType string    `json:"content_type"`
+	SessionID   *string   `json:"session_id"`
+	UploadedBy  *string   `json:"uploaded_by"`
+}
+
+// ListFileMetadata handles GET /api/files/metadata?mac_id=X
+// Returns the same files as ListFiles, sorted by name, with size, last update
+// time, content type, session_id and uploader UID taken from the GCS object
+// that ListFiles / SignedReadURL would serve. One GCS list call per request.
+func ListFileMetadata(gcsClient *storage.Client, bucket string) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		macID, err := normaliseMACForPath(c.Query("mac_id"))
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "mac_id is missing or not a valid MAC address"})
+			return
+		}
+
+		entries, err := collectFiles(c.Request.Context(), gcsClient, bucket, macID)
+		if err != nil {
+			log.Printf("ERROR ListFileMetadata GCS bucket=%s mac_id=%s: %v", bucket, macID, err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "storage error"})
+			return
+		}
+		sort.Slice(entries, func(i, j int) bool { return entries[i].Name < entries[j].Name })
+
+		rows := make([]fileMetadataRow, 0, len(entries))
+		for _, e := range entries {
+			row := fileMetadataRow{
+				Name:        e.Name,
+				Size:        e.Attrs.Size,
+				Updated:     e.Attrs.Updated,
+				ContentType: e.Attrs.ContentType,
+			}
+			if e.SessionID != "" {
+				row.SessionID = &e.SessionID
+			}
+			if uid, ok := e.Attrs.Metadata[uploadedByMetaKey]; ok && uid != "" {
+				row.UploadedBy = &uid
+			}
+			rows = append(rows, row)
+		}
+		c.JSON(http.StatusOK, rows)
+	}
+}
+
+// fileEntry is one visible file under a device: its base name, the session it
+// was resolved from ("" for legacy flat files), and the attrs of that object.
+type fileEntry struct {
+	Name      string
+	SessionID string
+	Attrs     *storage.ObjectAttrs
+}
+
+// collectFiles lists {mac_id}/ in one GCS call and returns the files a client
+// should see: legacy flat files first, then each base name from its latest
+// session if that session is committed. Legacy files take precedence if a name
+// collides.
+func collectFiles(ctx context.Context, gcsClient *storage.Client, bucket, macID string) ([]fileEntry, error) {
+	prefix := macID + "/"
+	it := gcsClient.Bucket(bucket).Objects(ctx, &storage.Query{Prefix: prefix})
+
+	committedSessions := map[string]bool{}
+	fileLatest := map[string]fileEntry{} // base_filename → entry from latest session_id seen
+	var legacyFiles []fileEntry
+
+	for {
+		attrs, err := it.Next()
+		if err == iterator.Done {
+			break
+		}
+		if err != nil {
+			return nil, err
+		}
+		rel := strings.TrimPrefix(attrs.Name, prefix)
+		parts := strings.SplitN(rel, "/", 2)
+
+		if len(parts) == 1 {
+			// legacy flat file: {mac_id}/{file}
+			if parts[0] != "_COMMIT.json" {
+				legacyFiles = append(legacyFiles, fileEntry{Name: parts[0], Attrs: attrs})
+			}
+		} else {
+			// session file: {mac_id}/{session_id}/{file}
+			sessionID, base := parts[0], parts[1]
+			if base == "_COMMIT.json" {
+				committedSessions[sessionID] = true
+			} else if existing, ok := fileLatest[base]; !ok || sessionID > existing.SessionID {
+				fileLatest[base] = fileEntry{Name: base, SessionID: sessionID, Attrs: attrs}
+			}
+		}
+	}
+
+	seen := map[string]bool{}
+	var entries []fileEntry
+	for _, e := range legacyFiles {
+		if !seen[e.Name] {
+			seen[e.Name] = true
+			entries = append(entries, e)
+		}
+	}
+	for base, e := range fileLatest {
+		if committedSessions[e.SessionID] && !seen[base] {
+			seen[base] = true
+			entries = append(entries, e)
+		}
+	}
+	return entries, nil
 }
 
 // resolveObjectName returns the full GCS object path for a bare filename under macID.
@@ -220,7 +301,7 @@ func SignedReadURL(env *Env) gin.HandlerFunc {
 // Generates a new gateway-owned session_id, signs a PUT URL for each filename,
 // and returns both so the client can upload directly to GCS then commit in one
 // subsequent call — no separate session/start round-trip needed.
-// Response: {"session_id": "S", "urls": {"f1.hex": "...", "f2.hex": "..."}}
+// Response: {"session_id": "S", "urls": {"f1.hex": "...", "f2.hex": "..."}, "required_headers": {...}}
 func SignedUploadURL(env *Env) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		var body struct {
@@ -249,8 +330,13 @@ func SignedUploadURL(env *Env) gin.HandlerFunc {
 
 		signBytes := signBytesFunc(env.IAMService, env.ServiceAccountEmail)
 
-		// Headers the client must include verbatim in each PUT request.
-		signedHeaders := []string{"X-Goog-Content-Length-Range: 0,52428800"}
+		// Headers the client must include verbatim in each PUT request. They are
+		// part of the signature, so the client cannot drop or change them. The
+		// uploader UID is stored as GCS object metadata ("uploaded-by").
+		signedHeaders := []string{
+			"X-Goog-Content-Length-Range: 0,52428800",
+			uploadedByHeader + ": " + c.GetString(middleware.ContextKeyUID),
+		}
 		requiredHeaders := make(map[string]string, len(signedHeaders))
 		for _, h := range signedHeaders {
 			if parts := strings.SplitN(h, ": ", 2); len(parts) == 2 {
@@ -310,9 +396,10 @@ func CommitSession(gcsClient *storage.Client, bucket string) gin.HandlerFunc {
 		}
 
 		commit := map[string]any{
-			"session_id": sessionID,
-			"timestamp":  time.Now().UTC().Format(time.RFC3339),
-			"files":      files,
+			"session_id":  sessionID,
+			"timestamp":   time.Now().UTC().Format(time.RFC3339),
+			"files":       files,
+			"uploaded_by": c.GetString(middleware.ContextKeyUID),
 		}
 		data, _ := json.Marshal(commit)
 
