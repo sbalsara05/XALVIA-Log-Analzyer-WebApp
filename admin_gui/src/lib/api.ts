@@ -1,6 +1,5 @@
 import { auth } from "@/lib/firebase";
 
-// const API_BASE_URL = import.meta.env.VITE_API_BASE_URL;
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "";
 
 export class ApiError extends Error {
@@ -47,7 +46,7 @@ async function request<T>(
   let token = await user.getIdToken(false);
   let response = await send(token);
 
-  // Retry once using a freshly issued Firebase ID token.
+  // Retry once with a fresh Firebase ID token.
   if (response.status === 401) {
     token = await user.getIdToken(true);
     response = await send(token);
@@ -79,6 +78,20 @@ export const apiClient = {
     return request<T>(path, {
       method: "POST",
       body: body === undefined ? undefined : JSON.stringify(body),
+    });
+  },
+
+  postRaw<T>(
+    path: string,
+    body: BodyInit,
+    contentType = "application/octet-stream"
+  ) {
+    return request<T>(path, {
+      method: "POST",
+      body,
+      headers: {
+        "Content-Type": contentType,
+      },
     });
   },
 
