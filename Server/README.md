@@ -26,11 +26,11 @@ go_gateway/
 ├── handlers/
 │   ├── env.go                 — shared Env struct injected into all handlers
 │   ├── orgs.go                — org and user CRUD (control plane)
-│   ├── files.go               — signed URL generation, file listing
+│   ├── files.go               - signed URL generation, file listing and metadata
+│   ├── me.go                  - caller's memberships and effective device access
 │   ├── parse.go               — device log and test log parsing
 │   ├── profile.go             — caller profile
-│   ├── health.go              — liveness probe
-│   └── admin.go               — UpdatePermissions (stub)
+│   └── health.go              — liveness probe
 ├── routes/
 │   ├── control_plane.go       — registers control plane routes
 │   └── data_plane.go          — registers data plane routes
@@ -214,8 +214,9 @@ Control Plane routes (/api/*)
 Data Plane routes
   ├── GET  /health                            (no auth)
   ├── GET  /api/profile                       JWT → ACL → Profile
-  ├── PUT  /api/users/:id/permissions         JWT → ACL → RequireAdmin → UpdatePermissions
+  ├── GET  /api/me/permissions                JWT → MyPermissions
   ├── GET  /api/files                         JWT → ACL → DeviceAccess("read") → ListFiles
+  ├── GET  /api/files/metadata                JWT → DeviceAccess("read") → ListFileMetadata
   ├── GET  /api/signed-url/read               JWT → ACL → DeviceAccess("read") → SignedReadURL
   ├── POST /api/parse/device-log              JWT → ACL → DeviceAccess("read") → ParseDeviceLog
   ├── POST /api/parse/test-log                JWT → ACL → DeviceAccess("read") → ParseTestLog
@@ -264,17 +265,25 @@ Sets `users.deleted_at = now()`. Super admin only. Does not touch `org_users` ro
 
 Lists deduplicated filenames available for a device. Resolves both legacy flat paths and committed session paths in GCS. Latest session wins on filename collision.
 
+### `ListFileMetadata` - `GET /api/files/metadata?mac_id=`
+
+Returns the same files as `ListFiles`, sorted by name, with size, last update time, content type, session ID and uploader UID. Both handlers share `collectFiles`, so the metadata always describes the object `SignedReadURL` would serve.
+
+### `MyPermissions` - `GET /api/me/permissions`
+
+Returns the caller's active org memberships and every device they can reach, with effective `can_read` / `can_upload` and `via` (`admin` or `member`). Uses a recursive **downward** CTE from the caller's admin orgs plus their direct non-admin memberships. It must grant exactly what `RequireDeviceAccess` enforces; `TestMyPermissions_ParityWithRequireDeviceAccess` checks this.
+
 ### `SignedReadURL` — `GET /api/signed-url/read?mac_id=&filename=`
 
 Returns a 15-minute GCS signed GET URL for a specific file. Session is resolved server-side.
 
 ### `SignedUploadURL` — `POST /api/signed-url/upload`
 
-Generates a new session ID and signed PUT URLs for each requested filename. Enforces a 50 MB file size cap via `X-Goog-Content-Length-Range` header. URLs expire in 15 minutes.
+Generates a new session ID and signed PUT URLs for each requested filename. Enforces a 50 MB file size cap via `X-Goog-Content-Length-Range` header and records the caller's UID via a signed `X-Goog-Meta-Uploaded-By` header (stored as GCS object metadata `uploaded-by`). URLs expire in 15 minutes.
 
 ### `CommitSession` — `POST /api/commit`
 
-Writes `{mac_id}/{session_id}/_COMMIT.json` to GCS to seal an upload session. The Python client calls this after all files are uploaded.
+Writes `{mac_id}/{session_id}/_COMMIT.json` (`session_id`, `timestamp`, `files`, `uploaded_by`) to GCS to seal an upload session. The Python client calls this after all files are uploaded.
 
 ---
 
