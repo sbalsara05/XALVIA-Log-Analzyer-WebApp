@@ -108,14 +108,16 @@ func ensureSystemUser(t *testing.T, db *sql.DB) {
 	}
 }
 
-// insertUser inserts a users row with added_by = systemUID.
+// insertUser inserts a users row with added_by = systemUID. A row left behind
+// by an earlier run (hard delete blocked by an FK, so still soft-deleted) is
+// revived, so every test starts from an active user.
 func insertUser(t *testing.T, db *sql.DB, id, email string) {
 	t.Helper()
 	ensureSystemUser(t, db)
 	_, err := db.Exec(`
 		INSERT INTO users (id, email, added_by)
 		VALUES ($1, $2, $3)
-		ON CONFLICT (id) DO UPDATE SET email = EXCLUDED.email`,
+		ON CONFLICT (id) DO UPDATE SET email = EXCLUDED.email, deleted_at = NULL, removed_by = NULL`,
 		id, email, systemUID,
 	)
 	if err != nil {
@@ -519,6 +521,9 @@ func TestCreateOrg_DuplicateName_Returns409(t *testing.T) {
 	grantMembership(t, db, callerUID, parentID, "admin", true, true)
 
 	name := "CODupChild_" + t.Name()
+	// The created child references the caller (added_by) and the parent, so it
+	// must go before their cleanups run.
+	t.Cleanup(func() { db.Exec(`DELETE FROM orgs WHERE parent_org_id=$1`, parentID) })
 	create := func() int {
 		w := callHandler(http.MethodPost, "/api/orgs", callerUID, nil,
 			map[string]any{"name": name, "parent_org_id": parentID},
@@ -526,8 +531,8 @@ func TestCreateOrg_DuplicateName_Returns409(t *testing.T) {
 		)
 		return w.Code
 	}
-	if code := create(); code != http.StatusOK {
-		t.Fatalf("first create: want 200, got %d", code)
+	if code := create(); code != http.StatusCreated {
+		t.Fatalf("first create: want 201, got %d", code)
 	}
 	if code := create(); code != http.StatusConflict {
 		t.Fatalf("duplicate create: want 409, got %d", code)
@@ -903,7 +908,9 @@ func TestUpsertOrgUser_NewEmail_CreatesAccountAndSendsInvite(t *testing.T) {
 	})
 }
 
-func TestUpsertOrgUser_OOBSendFailure_Returns500(t *testing.T) {
+// The invite email is sent after the DB commit, so a send failure cannot undo
+// the grant: the handler returns 200 with email_warning so the admin can resend.
+func TestUpsertOrgUser_OOBSendFailure_Returns200WithWarning(t *testing.T) {
 	recordResult(t)
 	db := testDB(t)
 	orgID := insertOrg(t, db, "UpsOOBFail_"+t.Name(), nil)
@@ -920,9 +927,24 @@ func TestUpsertOrgUser_OOBSendFailure_Returns500(t *testing.T) {
 		map[string]any{"email": email, "role": "user"},
 		handlers.UpsertOrgUser(db, fb, oob),
 	)
-	if w.Code != http.StatusInternalServerError {
-		t.Fatalf("want 500 when OOB send fails, got %d: %s", w.Code, w.Body.String())
+	if w.Code != http.StatusOK {
+		t.Fatalf("want 200 when OOB send fails after commit, got %d: %s", w.Code, w.Body.String())
 	}
+	var resp struct {
+		Invited      bool   `json:"invited"`
+		EmailWarning string `json:"email_warning"`
+	}
+	decodeJSON(t, w, &resp)
+	if !resp.Invited {
+		t.Error("invited must be true when a new Firebase account was created")
+	}
+	if resp.EmailWarning == "" {
+		t.Error("email_warning must be set when the invite email failed")
+	}
+	t.Cleanup(func() {
+		db.Exec(`DELETE FROM org_users WHERE user_id=$1`, newUID)
+		db.Exec(`DELETE FROM users      WHERE id=$1`, newUID)
+	})
 }
 
 func TestUpsertOrgUser_ExistingFirebaseUser_NeverCallsCreateUser(t *testing.T) {
@@ -1279,7 +1301,7 @@ func TestUpsertOrgUser_Invite_NoDBRowWrittenOnCreateUserFailure(t *testing.T) {
 	}
 }
 
-func TestUpsertOrgUser_Invite_OOBFailure_NoOrgUsersRow(t *testing.T) {
+func TestUpsertOrgUser_Invite_OOBFailure_GrantStillCommitted(t *testing.T) {
 	recordResult(t)
 	db := testDB(t)
 	orgID := insertOrg(t, db, "UpsInvOOBRow_"+t.Name(), nil)
@@ -1296,15 +1318,20 @@ func TestUpsertOrgUser_Invite_OOBFailure_NoOrgUsersRow(t *testing.T) {
 		map[string]any{"email": email, "role": "user"},
 		handlers.UpsertOrgUser(db, fb, oob),
 	)
-	if w.Code != http.StatusInternalServerError {
-		t.Fatalf("want 500 when OOB fails, got %d: %s", w.Code, w.Body.String())
+	if w.Code != http.StatusOK {
+		t.Fatalf("want 200 when OOB fails after commit, got %d: %s", w.Code, w.Body.String())
 	}
-	// The DB transaction is never committed — no org_users row must exist.
-	var count int
-	db.QueryRow(`SELECT COUNT(*) FROM org_users WHERE user_id=$1 AND org_id=$2`, newUID, orgID).Scan(&count)
-	if count != 0 {
-		t.Errorf("org_users row must not exist when OOB send failed; found %d", count)
+	t.Cleanup(func() {
+		db.Exec(`DELETE FROM org_users WHERE user_id=$1`, newUID)
+		db.Exec(`DELETE FROM users      WHERE id=$1`, newUID)
+	})
+	// The transaction commits before the email is sent, so the users and
+	// org_users rows must both exist despite the send failure.
+	var storedEmail string
+	if err := db.QueryRow(`SELECT email FROM users WHERE id=$1 AND deleted_at IS NULL`, newUID).Scan(&storedEmail); err != nil {
+		t.Fatalf("users row must exist after OOB failure: %v", err)
 	}
+	activeOrgUser(t, db, newUID, orgID)
 }
 
 func TestUpsertOrgUser_Invite_FirebaseLookupTransientError_Returns500_NeverInvites(t *testing.T) {
@@ -2829,14 +2856,14 @@ func TestAddDevice_AdminCanAdd(t *testing.T) {
 	grantMembership(t, db, uid, orgID, "admin", true, true)
 	t.Cleanup(func() { db.Exec(`DELETE FROM devices WHERE id = $1`, "AABBCCDDEEFF") })
 
-	w := callDeviceAdd(db, uid, orgID, "AA:BB:CC:DD:EE:FF")
+	w := callDeviceAdd(db, uid, orgID, "aabbccddeeff")
 	if w.Code != http.StatusCreated {
 		t.Fatalf("want 201, got %d: %s", w.Code, w.Body.String())
 	}
 	var resp map[string]any
 	decodeJSON(t, w, &resp)
 	if resp["id"] != "AABBCCDDEEFF" {
-		t.Errorf("want normalised MAC AABBCCDDEEFF, got %v", resp["id"])
+		t.Errorf("want upper-cased device ID AABBCCDDEEFF, got %v", resp["id"])
 	}
 }
 
@@ -2867,7 +2894,7 @@ func TestAddDevice_AncestorAdminCanAdd(t *testing.T) {
 	grantMembership(t, db, uid, parentID, "admin", true, true)
 	t.Cleanup(func() { db.Exec(`DELETE FROM devices WHERE id = $1`, "BBCCDDEEFF00") })
 
-	w := callDeviceAdd(db, uid, childID, "BB:CC:DD:EE:FF:00")
+	w := callDeviceAdd(db, uid, childID, "BBCCDDEEFF00")
 	if w.Code != http.StatusCreated {
 		t.Fatalf("want 201, got %d: %s", w.Code, w.Body.String())
 	}
@@ -2883,7 +2910,7 @@ func TestAddDevice_Conflict_ActiveSameOrg(t *testing.T) {
 	grantMembership(t, db, uid, orgID, "admin", true, true)
 	insertDevice(t, db, "CCDDEEFF0011", orgID)
 
-	w := callDeviceAdd(db, uid, orgID, "CC:DD:EE:FF:00:11")
+	w := callDeviceAdd(db, uid, orgID, "CCDDEEFF0011")
 	if w.Code != http.StatusConflict {
 		t.Errorf("want 409, got %d: %s", w.Code, w.Body.String())
 	}
@@ -2901,7 +2928,7 @@ func TestAddDevice_Conflict_ActiveOtherOrg(t *testing.T) {
 	grantMembership(t, db, uid, org2ID, "admin", true, true)
 	insertDevice(t, db, "DDEEFF001122", org1ID)
 
-	w := callDeviceAdd(db, uid, org2ID, "DD:EE:FF:00:11:22")
+	w := callDeviceAdd(db, uid, org2ID, "DDEEFF001122")
 	if w.Code != http.StatusConflict {
 		t.Errorf("want 409, got %d: %s", w.Code, w.Body.String())
 	}

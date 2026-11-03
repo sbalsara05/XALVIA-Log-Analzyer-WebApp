@@ -85,7 +85,7 @@ func ListOrgDevices(db *sql.DB) gin.HandlerFunc {
 
 // AddDevice handles POST /api/orgs/:org_id/devices.
 // Requires RequireOrgAdmin upstream.
-// Body: {"mac_id": "AABBCCDDEEFF"} (colons/hyphens accepted, normalised to upper hex).
+// Body: {"mac_id": "AABBCCDDEEFF"} (alphanumeric only, normalised to upper case).
 //
 // Each registration is a new row. A soft-deleted MAC can be re-registered, which
 // inserts a fresh row alongside the historical one.
