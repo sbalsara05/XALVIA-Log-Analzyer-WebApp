@@ -5,7 +5,6 @@ from typing import List, Optional
 from PySide6.QtCore import QObject, QRunnable, Signal, Slot
 from serial import Serial, SerialException, SerialTimeoutException
 from serial.tools import list_ports
-from platform import system
 from time import sleep 
 
 from .. import constants
@@ -47,18 +46,12 @@ class USBSerialConnection(QObject):
     
     def detect_ports(self) -> list:
         """
-        Check available serial ports
+        Check available serial ports.
+        Match on USB VID/PID, not the description, which comes from the driver
+        and changes with driver vendor and OS language.
         """
-        ports = list_ports.comports()
-        filtered_ports = []
-        for port in ports:
-            if system() == 'Windows':
-                if 'CP210x USB to UART Bridge' in port.description:
-                    filtered_ports.append(port.device)
-            else:
-                if 'CP2102N USB to UART Bridge Controller' in port.description:
-                    filtered_ports.append(port.device)
-        return filtered_ports
+        return [port.device for port in list_ports.comports()
+                if port.vid == constants.USB_VID and port.pid == constants.USB_PID]
     
     def connect_to_port(self, port_device: str, baudrate:int, timeout:float)->bool:
         self.close_port()
