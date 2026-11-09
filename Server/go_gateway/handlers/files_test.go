@@ -34,7 +34,11 @@ import (
 // ---------------------------------------------------------------------------
 
 type fakeObject struct {
-	name string // full GCS object name, e.g. "AABBCC/20260101_090000_000000/file.txt"
+	name        string // full GCS object name, e.g. "AABBCC/20260101_090000_000000/file.txt"
+	size        int64
+	updated     time.Time
+	contentType string
+	metadata    map[string]string
 }
 
 // fakeGCS starts a test HTTP server that answers GCS list and attrs requests.
@@ -49,13 +53,24 @@ func fakeGCS(t *testing.T, bucket string, objects []fakeObject) *storage.Client 
 		if r.Method == http.MethodGet && strings.HasSuffix(path, "/o") {
 			prefix := r.URL.Query().Get("prefix")
 			type item struct {
-				Kind string `json:"kind"`
-				Name string `json:"name"`
+				Kind        string            `json:"kind"`
+				Name        string            `json:"name"`
+				Size        string            `json:"size,omitempty"`
+				Updated     string            `json:"updated,omitempty"`
+				ContentType string            `json:"contentType,omitempty"`
+				Metadata    map[string]string `json:"metadata,omitempty"`
 			}
 			var items []item
 			for _, o := range objects {
 				if strings.HasPrefix(o.name, prefix) {
-					items = append(items, item{Kind: "storage#object", Name: o.name})
+					it := item{Kind: "storage#object", Name: o.name, ContentType: o.contentType, Metadata: o.metadata}
+					if o.size != 0 {
+						it.Size = fmt.Sprint(o.size)
+					}
+					if !o.updated.IsZero() {
+						it.Updated = o.updated.Format(time.RFC3339Nano)
+					}
+					items = append(items, it)
 				}
 			}
 			if items == nil {

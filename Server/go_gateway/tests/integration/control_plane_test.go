@@ -115,7 +115,7 @@ func insertUser(t *testing.T, db *sql.DB, id, email string) {
 	_, err := db.Exec(`
 		INSERT INTO users (id, email, added_by)
 		VALUES ($1, $2, $3)
-		ON CONFLICT (id) DO UPDATE SET email = EXCLUDED.email`,
+		ON CONFLICT (id) DO UPDATE SET email = EXCLUDED.email, deleted_at = NULL, removed_by = NULL`,
 		id, email, systemUID,
 	)
 	if err != nil {
@@ -519,6 +519,8 @@ func TestCreateOrg_DuplicateName_Returns409(t *testing.T) {
 	grantMembership(t, db, callerUID, parentID, "admin", true, true)
 
 	name := "CODupChild_" + t.Name()
+	// The handler creates the child org, so remove it before the parent's cleanup runs (LIFO).
+	t.Cleanup(func() { db.Exec(`DELETE FROM orgs WHERE parent_org_id = $1`, parentID) })
 	create := func() int {
 		w := callHandler(http.MethodPost, "/api/orgs", callerUID, nil,
 			map[string]any{"name": name, "parent_org_id": parentID},
@@ -526,8 +528,8 @@ func TestCreateOrg_DuplicateName_Returns409(t *testing.T) {
 		)
 		return w.Code
 	}
-	if code := create(); code != http.StatusOK {
-		t.Fatalf("first create: want 200, got %d", code)
+	if code := create(); code != http.StatusCreated {
+		t.Fatalf("first create: want 201, got %d", code)
 	}
 	if code := create(); code != http.StatusConflict {
 		t.Fatalf("duplicate create: want 409, got %d", code)
@@ -903,12 +905,17 @@ func TestUpsertOrgUser_NewEmail_CreatesAccountAndSendsInvite(t *testing.T) {
 	})
 }
 
-func TestUpsertOrgUser_OOBSendFailure_Returns500(t *testing.T) {
+// The invite email is sent after commit, so a send failure is a warning, not a 500.
+func TestUpsertOrgUser_OOBSendFailure_ReturnsEmailWarning(t *testing.T) {
 	recordResult(t)
 	db := testDB(t)
 	orgID := insertOrg(t, db, "UpsOOBFail_"+t.Name(), nil)
 	newUID := "ups-oob-fail-" + t.Name()
 	email := newUID + "@example.com"
+	t.Cleanup(func() {
+		db.Exec(`DELETE FROM org_users WHERE user_id=$1`, newUID)
+		db.Exec(`DELETE FROM users      WHERE id=$1`, newUID)
+	})
 
 	oob := &fakeOOBSender{err: fmt.Errorf("smtp: connection refused")}
 	fb := &fakeFirebase{
@@ -920,8 +927,13 @@ func TestUpsertOrgUser_OOBSendFailure_Returns500(t *testing.T) {
 		map[string]any{"email": email, "role": "user"},
 		handlers.UpsertOrgUser(db, fb, oob),
 	)
-	if w.Code != http.StatusInternalServerError {
-		t.Fatalf("want 500 when OOB send fails, got %d: %s", w.Code, w.Body.String())
+	if w.Code != http.StatusOK {
+		t.Fatalf("want 200 when OOB send fails after commit, got %d: %s", w.Code, w.Body.String())
+	}
+	var resp map[string]any
+	decodeJSON(t, w, &resp)
+	if resp["email_warning"] == nil {
+		t.Errorf("want email_warning in response, got %v", resp)
 	}
 }
 
@@ -1279,12 +1291,16 @@ func TestUpsertOrgUser_Invite_NoDBRowWrittenOnCreateUserFailure(t *testing.T) {
 	}
 }
 
-func TestUpsertOrgUser_Invite_OOBFailure_NoOrgUsersRow(t *testing.T) {
+func TestUpsertOrgUser_Invite_OOBFailure_OrgUsersRowCommitted(t *testing.T) {
 	recordResult(t)
 	db := testDB(t)
 	orgID := insertOrg(t, db, "UpsInvOOBRow_"+t.Name(), nil)
 	newUID := "ups-inv-oob-row-" + t.Name()
 	email := newUID + "@example.com"
+	t.Cleanup(func() {
+		db.Exec(`DELETE FROM org_users WHERE user_id=$1`, newUID)
+		db.Exec(`DELETE FROM users      WHERE id=$1`, newUID)
+	})
 
 	oob := &fakeOOBSender{err: fmt.Errorf("firebase: sendOobCode: status 500")}
 	fb := &fakeFirebase{
@@ -1296,14 +1312,14 @@ func TestUpsertOrgUser_Invite_OOBFailure_NoOrgUsersRow(t *testing.T) {
 		map[string]any{"email": email, "role": "user"},
 		handlers.UpsertOrgUser(db, fb, oob),
 	)
-	if w.Code != http.StatusInternalServerError {
-		t.Fatalf("want 500 when OOB fails, got %d: %s", w.Code, w.Body.String())
+	if w.Code != http.StatusOK {
+		t.Fatalf("want 200 when OOB fails after commit, got %d: %s", w.Code, w.Body.String())
 	}
-	// The DB transaction is never committed — no org_users row must exist.
+	// The transaction commits before the email is sent, so the grant must persist.
 	var count int
-	db.QueryRow(`SELECT COUNT(*) FROM org_users WHERE user_id=$1 AND org_id=$2`, newUID, orgID).Scan(&count)
-	if count != 0 {
-		t.Errorf("org_users row must not exist when OOB send failed; found %d", count)
+	db.QueryRow(`SELECT COUNT(*) FROM org_users WHERE user_id=$1 AND org_id=$2 AND revoked_at IS NULL`, newUID, orgID).Scan(&count)
+	if count != 1 {
+		t.Errorf("want 1 active org_users row after OOB send failure; found %d", count)
 	}
 }
 
