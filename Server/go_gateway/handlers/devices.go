@@ -17,10 +17,17 @@ import (
 // macRe matches any non-empty alphanumeric device ID.
 var macRe = regexp.MustCompile(`^[0-9a-zA-Z]+$`)
 
+// separatedMACRe matches a MAC written with ':' or '-' separators, e.g. AA:BB:CC:DD:EE:FF.
+var separatedMACRe = regexp.MustCompile(`^([0-9A-Fa-f]{2}[:-]){5}[0-9A-Fa-f]{2}$`)
+
 // normaliseMACID validates and returns an upper-case alphanumeric device ID,
 // or an error if the input contains non-alphanumeric characters.
+// A colon- or dash-separated MAC has its separators stripped first.
 func normaliseMACID(raw string) (string, error) {
 	raw = strings.TrimSpace(raw)
+	if separatedMACRe.MatchString(raw) {
+		raw = strings.NewReplacer(":", "", "-", "").Replace(raw)
+	}
 	if !macRe.MatchString(raw) {
 		return "", fmt.Errorf("not a valid device ID: %q", raw)
 	}
@@ -85,7 +92,7 @@ func ListOrgDevices(db *sql.DB) gin.HandlerFunc {
 
 // AddDevice handles POST /api/orgs/:org_id/devices.
 // Requires RequireOrgAdmin upstream.
-// Body: {"mac_id": "AABBCCDDEEFF"} (alphanumeric only, normalised to upper case).
+// Body: {"mac_id": "AABBCCDDEEFF"} (colon/hyphen-separated MACs accepted, normalised to upper case).
 //
 // Each registration is a new row. A soft-deleted MAC can be re-registered, which
 // inserts a fresh row alongside the historical one.

@@ -13,16 +13,23 @@ export interface CreateOrgPayload {
 
 export const orgsService = {
   list: async (): Promise<Org[]> => {
-    const res = await apiClient.get("/api/orgs");
-    return res.data;
+    return apiClient.get<Org[]>("/api/orgs");
   },
 
-  create: async (payload: CreateOrgPayload): Promise<Org> => {
-    const res = await apiClient.post("/api/orgs", payload);
-    return res.data;
+  create: async (
+    payload: CreateOrgPayload
+  ): Promise<Org> => {
+    return apiClient.post<Org>(
+      "/api/orgs",
+      payload
+    );
   },
 
-  delete: async (orgId: number): Promise<void> => {
-    await apiClient.delete(`/api/orgs/${orgId}`);
+  delete: async (
+    orgId: number
+  ): Promise<void> => {
+    await apiClient.delete(
+      `/api/orgs/${orgId}`
+    );
   },
 };

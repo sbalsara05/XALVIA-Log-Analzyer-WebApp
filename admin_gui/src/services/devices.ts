@@ -14,19 +14,23 @@ export interface AddDeviceResponse {
 }
 
 export const devicesService = {
-  listByOrg: async (orgId: number): Promise<Device[]> => {
-    const res = await apiClient.get(`/api/orgs/${orgId}/devices`);
-    return res.data;
+  listByOrg: async (
+    orgId: number
+  ): Promise<Device[]> => {
+    return apiClient.get<Device[]>(`/api/orgs/${orgId}/devices`);
   },
 
-  add: async (orgId: number, macId: string): Promise<AddDeviceResponse> => {
-    const res = await apiClient.post(`/api/orgs/${orgId}/devices`, {
-      mac_id: macId,
-    });
-    return res.data;
+  add: async (
+    orgId: number,
+    macId: string
+  ): Promise<AddDeviceResponse> => {
+    return apiClient.post<AddDeviceResponse>(`/api/orgs/${orgId}/devices`, {mac_id: macId, });
   },
 
-  remove: async (orgId: number, macId: string): Promise<void> => {
+  remove: async (
+    orgId: number,
+    macId: string
+  ): Promise<void> => {
     await apiClient.delete(`/api/orgs/${orgId}/devices/${macId}`);
   },
 };

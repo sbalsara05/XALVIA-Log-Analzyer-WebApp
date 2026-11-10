@@ -1,19 +1,47 @@
 import { lazy, useEffect, useState } from "react";
-import { useNavigate, Navigate, Outlet } from "react-router-dom";
-import { signOut, sendEmailVerification } from "firebase/auth";
+import {
+  useNavigate,
+  Navigate,
+  Outlet,
+} from "react-router-dom";
+
+import {
+  signOut,
+  sendEmailVerification,
+} from "firebase/auth";
+
 import { auth } from "@/lib/firebase";
 import { useAuth } from "@/contexts/AuthContext";
-import { Loader2, ShieldX, AlertCircle, MailCheck } from "lucide-react";
+
+import {
+  Loader2,
+  ShieldX,
+  AlertCircle,
+  MailCheck,
+} from "lucide-react";
+
 import { Button } from "@/components/ui/button";
 import { MSG } from "@/lib/constants";
 
-const MfaSetupView = lazy(() => import("@/views/MfaSetupView").then(m => ({ default: m.MfaSetupView })));
+const MfaSetupView = lazy(() =>
+  import("@/views/MfaSetupView").then((m) => ({
+    default: m.MfaSetupView,
+  }))
+);
 
 export function AuthGuard() {
-  const { user, loading, emailVerified, hasAdminAccess, mfaEnrolled, accessCheckError } = useAuth();
+  const {
+    user,
+    loading,
+    emailVerified,
+    hasAdminAccess,
+    mfaEnrolled,
+    accessCheckError,
+  } = useAuth();
 
-  // Phase 1: wait for onAuthStateChanged + synchronous emailVerified/mfaEnrolled reads.
-  if (loading || (user && (emailVerified === null || mfaEnrolled === null))) {
+  // Wait until Firebase auth state and any required
+  // backend access verification are fully resolved.
+  if (loading) {
     return (
       <div className="flex h-screen items-center justify-center bg-background">
         <Loader2 className="h-6 w-6 animate-spin text-primary" />
@@ -21,24 +49,28 @@ export function AuthGuard() {
     );
   }
 
+  // Protected routes require an authenticated Firebase user.
   if (!user) {
     return <Navigate to="/login" replace />;
   }
 
-  // Phase 1.5: email must be verified before proceeding.
-  // Google OAuth users always have emailVerified = true and pass through automatically.
+  // Email verification must be completed before MFA setup
+  // and backend access verification can proceed.
   if (emailVerified === false) {
     return <VerifyEmailView />;
   }
 
-  // Phase 2: mfaEnrolled is known. Intercept before the gateway access check —
-  // an unenrolled token would be rejected by the gateway anyway.
+  // MFA enrollment is required before backend access verification.
   if (mfaEnrolled === false) {
     return <MfaSetupView />;
   }
 
-  // Phase 3: user is enrolled — wait for the gateway access check.
-  if (hasAdminAccess === null && !accessCheckError) {
+  // Once Firebase-side requirements are satisfied,
+  // the backend access check should resolve to true/false.
+  if (
+    hasAdminAccess === null &&
+    !accessCheckError
+  ) {
     return (
       <div className="flex h-screen items-center justify-center bg-background">
         <Loader2 className="h-6 w-6 animate-spin text-primary" />
@@ -54,39 +86,72 @@ export function AuthGuard() {
     return <AccessDeniedView />;
   }
 
+  // All authentication and access checks passed.
   return <Outlet />;
 }
 
 function VerifyEmailView() {
   const { reloadUser } = useAuth();
-  const [checking, setChecking] = useState(false);
-  const [resending, setResending] = useState(false);
-  const [stillUnverified, setStillUnverified] = useState(false);
-  const [resendCooldown, setResendCooldown] = useState(false);
+
+  const [checking, setChecking] =
+    useState(false);
+
+  const [resending, setResending] =
+    useState(false);
+
+  const [stillUnverified, setStillUnverified] =
+    useState(false);
+
+  const [resendCooldown, setResendCooldown] =
+    useState(false);
 
   useEffect(() => {
-    if (auth.currentUser) sendEmailVerification(auth.currentUser).catch(() => {});
+    if (auth.currentUser) {
+      sendEmailVerification(
+        auth.currentUser
+      ).catch(() => {});
+    }
   }, []);
 
   async function handleVerifyDone() {
     setChecking(true);
     setStillUnverified(false);
+
     await reloadUser();
-    if (!auth.currentUser?.emailVerified) setStillUnverified(true);
+
+    if (!auth.currentUser?.emailVerified) {
+      setStillUnverified(true);
+    }
+
     setChecking(false);
   }
 
   async function handleResend() {
-    if (!auth.currentUser || resendCooldown) return;
+    if (
+      !auth.currentUser ||
+      resendCooldown
+    ) {
+      return;
+    }
+
     setResending(true);
-    await sendEmailVerification(auth.currentUser).catch(() => {});
+
+    await sendEmailVerification(
+      auth.currentUser
+    ).catch(() => {});
+
     setResending(false);
     setResendCooldown(true);
-    setTimeout(() => setResendCooldown(false), 30_000);
+
+    setTimeout(() => {
+      setResendCooldown(false);
+    }, 30_000);
   }
 
   function handleSignOut() {
-    signOut(auth).then(() => (window.location.href = "/login"));
+    signOut(auth).then(() => {
+      window.location.href = "/login";
+    });
   }
 
   return (
@@ -96,24 +161,61 @@ function VerifyEmailView() {
           <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10">
             <MailCheck className="h-5 w-5 text-primary" />
           </div>
+
           <div className="text-center">
-            <h1 className="text-xl font-semibold text-foreground">{MSG.Auth.VERIFY_EMAIL_TITLE}</h1>
+            <h1 className="text-xl font-semibold text-foreground">
+              {MSG.Auth.VERIFY_EMAIL_TITLE}
+            </h1>
           </div>
         </div>
 
-        <div className="rounded-xl border border-border bg-card p-6 shadow-sm text-center space-y-4">
-          <p className="text-sm text-muted-foreground">{MSG.Auth.VERIFY_EMAIL_BODY}</p>
+        <div className="space-y-4 rounded-xl border border-border bg-card p-6 text-center shadow-sm">
+          <p className="text-sm text-muted-foreground">
+            {MSG.Auth.VERIFY_EMAIL_BODY}
+          </p>
+
           {stillUnverified && (
-            <p className="text-sm text-destructive">{MSG.Auth.VERIFY_EMAIL_STILL_UNVERIFIED}</p>
+            <p className="text-sm text-destructive">
+              {
+                MSG.Auth
+                  .VERIFY_EMAIL_STILL_UNVERIFIED
+              }
+            </p>
           )}
+
           <div className="flex flex-col gap-2">
-            <Button className="w-full" onClick={handleVerifyDone} disabled={checking}>
-              {checking ? <Loader2 className="h-4 w-4 animate-spin" /> : MSG.Auth.VERIFY_EMAIL_DONE}
+            <Button
+              className="w-full"
+              onClick={handleVerifyDone}
+              disabled={checking}
+            >
+              {checking ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                MSG.Auth.VERIFY_EMAIL_DONE
+              )}
             </Button>
-            <Button variant="outline" className="w-full" onClick={handleResend} disabled={resending || resendCooldown}>
-              {resending ? <Loader2 className="h-4 w-4 animate-spin" /> : MSG.Auth.VERIFY_EMAIL_RESEND}
+
+            <Button
+              variant="outline"
+              className="w-full"
+              onClick={handleResend}
+              disabled={
+                resending || resendCooldown
+              }
+            >
+              {resending ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                MSG.Auth.VERIFY_EMAIL_RESEND
+              )}
             </Button>
-            <Button variant="ghost" className="w-full" onClick={handleSignOut}>
+
+            <Button
+              variant="ghost"
+              className="w-full"
+              onClick={handleSignOut}
+            >
               Sign out
             </Button>
           </div>
@@ -129,7 +231,9 @@ function AccessCheckErrorView() {
   }
 
   function handleSignOut() {
-    signOut(auth).then(() => (window.location.href = "/login"));
+    signOut(auth).then(() => {
+      window.location.href = "/login";
+    });
   }
 
   return (
@@ -139,18 +243,32 @@ function AccessCheckErrorView() {
           <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-destructive/10">
             <AlertCircle className="h-5 w-5 text-destructive" />
           </div>
+
           <div className="text-center">
-            <h1 className="text-xl font-semibold text-foreground">Server Error</h1>
+            <h1 className="text-xl font-semibold text-foreground">
+              Server Error
+            </h1>
           </div>
         </div>
 
-        <div className="rounded-xl border border-border bg-card p-6 shadow-sm text-center space-y-4">
-          <p className="text-sm text-muted-foreground">{MSG.Auth.ACCESS_CHECK_ERROR}</p>
+        <div className="space-y-4 rounded-xl border border-border bg-card p-6 text-center shadow-sm">
+          <p className="text-sm text-muted-foreground">
+            {MSG.Auth.ACCESS_CHECK_ERROR}
+          </p>
+
           <div className="flex flex-col gap-2">
-            <Button className="w-full" onClick={handleRetry}>
+            <Button
+              className="w-full"
+              onClick={handleRetry}
+            >
               Try again
             </Button>
-            <Button variant="outline" className="w-full" onClick={handleSignOut}>
+
+            <Button
+              variant="outline"
+              className="w-full"
+              onClick={handleSignOut}
+            >
               Sign out
             </Button>
           </div>
@@ -164,7 +282,11 @@ function AccessDeniedView() {
   const navigate = useNavigate();
 
   function handleSignOut() {
-    signOut(auth).then(() => navigate("/login", { replace: true }));
+    signOut(auth).then(() => {
+      navigate("/login", {
+        replace: true,
+      });
+    });
   }
 
   return (
@@ -174,14 +296,24 @@ function AccessDeniedView() {
           <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-destructive/10">
             <ShieldX className="h-5 w-5 text-destructive" />
           </div>
+
           <div className="text-center">
-            <h1 className="text-xl font-semibold text-foreground">Access Denied</h1>
+            <h1 className="text-xl font-semibold text-foreground">
+              Access Denied
+            </h1>
           </div>
         </div>
 
-        <div className="rounded-xl border border-border bg-card p-6 shadow-sm text-center space-y-4">
-          <p className="text-sm text-muted-foreground">{MSG.Auth.NO_ADMIN_ACCESS}</p>
-          <Button variant="outline" className="w-full" onClick={handleSignOut}>
+        <div className="space-y-4 rounded-xl border border-border bg-card p-6 text-center shadow-sm">
+          <p className="text-sm text-muted-foreground">
+            {MSG.Auth.NO_ADMIN_ACCESS}
+          </p>
+
+          <Button
+            variant="outline"
+            className="w-full"
+            onClick={handleSignOut}
+          >
             Sign out
           </Button>
         </div>

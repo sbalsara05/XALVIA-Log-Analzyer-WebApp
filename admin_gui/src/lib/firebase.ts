@@ -1,7 +1,8 @@
 import { initializeApp } from "firebase/app";
+
 import {
   getAuth,
-  inMemoryPersistence,
+  browserLocalPersistence,
   setPersistence,
   GoogleAuthProvider,
 } from "firebase/auth";
@@ -13,12 +14,21 @@ const firebaseConfig = {
 };
 
 const app = initializeApp(firebaseConfig);
+
 export const auth = getAuth(app);
 
-// Token lives in JS memory only — nothing written to localStorage or indexedDB.
-// Closing the tab or refreshing the page ends the session immediately.
-setPersistence(auth, inMemoryPersistence);
+// Keep the authenticated Firebase session across page refreshes
+// and browser restarts. Explicit sign-out or Firebase revocation
+// ends the session.
+setPersistence(
+  auth,
+  browserLocalPersistence
+);
 
-export const googleProvider = new GoogleAuthProvider();
+export const googleProvider =
+  new GoogleAuthProvider();
 
-export { signInWithEmailAndPassword, signInWithPopup } from "firebase/auth";
+export {
+  signInWithEmailAndPassword,
+  signInWithPopup,
+} from "firebase/auth";

@@ -82,6 +82,26 @@ Requires: `VerifyFirebaseJWT`, `ACL`.
 
 ---
 
+### `GET /api/me/permissions`
+
+Requires: `VerifyFirebaseJWT`. No device check - the response only covers the caller.
+
+Lists the caller's active org memberships and every active device they can reach, with the effective flags `RequireDeviceAccess` would enforce:
+
+- `role='admin'` in the device's org or any ancestor → `can_read` and `can_upload` true, `via: "admin"`.
+- `role='user'` in the device's own org → that membership's flags, `via: "member"`. User grants do not pass down to child orgs.
+
+Devices where both flags are false are left out. Sorted by org name, then MAC.
+
+| Status | Body |
+|--------|------|
+| **200** | `{"uid": "...", "email": "...", "memberships": [{"org_id": 3, "org_name": "...", "role": "user", "can_read": true, "can_upload": false, "granted_at": "<RFC3339>"}], "devices": [{"mac_id": "AABBCCDDEEFF", "org_id": 3, "org_name": "...", "can_read": true, "can_upload": false, "via": "member"}]}` - both arrays are `[]` when the user has no access |
+| **401 / 403** | See Auth Middleware |
+| **404** | `{"error": "user not found"}` - no active `users` row |
+| **500** | `{"error": "query failed"}` |
+
+---
+
 ### `GET /api/files?mac_id=X`
 
 Requires: `VerifyFirebaseJWT`, `ACL`, `RequireDeviceAccess("read")`.
@@ -94,6 +114,21 @@ Returns deduplicated filenames across legacy flat files and committed sessions. 
 | **400** | `{"error": "mac_id is missing or not a valid MAC address"}` — invalid or missing mac_id |
 | **401 / 403** | See Auth Middleware |
 | **500** | `{"error": "storage error"}` — GCS listing failed |
+
+---
+
+### `GET /api/files/metadata?mac_id=X`
+
+Requires: `VerifyFirebaseJWT`, `RequireDeviceAccess("read")`.
+
+Returns the same files as `GET /api/files`, sorted by name, each described by the GCS object `signed-url/read` would serve. `session_id` is `null` for legacy flat files. `uploaded_by` is `null` for files uploaded before the gateway recorded uploaders.
+
+| Status | Body |
+|--------|------|
+| **200** | `[{"name": "f1.txt", "size": 48213, "updated": "<RFC3339>", "content_type": "application/octet-stream", "session_id": "YYYYMMDD_HHMMSS_microseconds", "uploaded_by": "<firebase uid>"}]` - empty array if no committed files |
+| **400** | `{"error": "mac_id is missing or not a valid MAC address"}` |
+| **401 / 403** | See Auth Middleware |
+| **500** | `{"error": "storage error"}` - GCS listing failed |
 
 ---
 
@@ -119,13 +154,13 @@ Requires: `VerifyFirebaseJWT`, `ACL`, `RequireDeviceAccess("upload")`.
 
 `mac_id` is read from the JSON body (not query string) — the device access middleware peeks at the body and restores it for the handler.
 
-Generates a new `session_id` (format: `YYYYMMDD_HHMMSS_microseconds`) and signs a 15-minute PUT URL per file. `required_headers` must be forwarded verbatim in every PUT to GCS — they are part of the signed string and GCS will return `SignatureDoesNotMatch` (403) if absent.
+Generates a new `session_id` (format: `YYYYMMDD_HHMMSS_microseconds`) and signs a 15-minute PUT URL per file. `required_headers` must be forwarded verbatim in every PUT to GCS — they are part of the signed string and GCS will return `SignatureDoesNotMatch` (403) if absent. `X-Goog-Meta-Uploaded-By` carries the caller's UID; GCS stores it as object metadata `uploaded-by`, which `GET /api/files/metadata` returns.
 
 **Request body:** `{"mac_id": "<alphanumeric>", "files": ["f1.txt", "f2.txt"]}`
 
 | Status | Body |
 |--------|------|
-| **200** | `{"session_id": "YYYYMMDD_HHMMSS_microseconds", "urls": {"f1.txt": "<signed PUT URL>", ...}, "required_headers": {"X-Goog-Content-Length-Range": "0,52428800"}}` |
+| **200** | `{"session_id": "YYYYMMDD_HHMMSS_microseconds", "urls": {"f1.txt": "<signed PUT URL>", ...}, "required_headers": {"X-Goog-Content-Length-Range": "0,52428800", "X-Goog-Meta-Uploaded-By": "<caller uid>"}}` |
 | **400** | `{"error": "body must be {mac_id, files[]}"}` — JSON binding failed |
 | **400** | `{"error": "files array must not be empty"}` |
 | **400** | `{"error": "mac_id must be a non-empty alphanumeric string"}` — invalid mac_id |
@@ -138,7 +173,7 @@ Generates a new `session_id` (format: `YYYYMMDD_HHMMSS_microseconds`) and signs 
 
 Requires: `VerifyFirebaseJWT`, `ACL`, `RequireDeviceAccess("upload")`.
 
-Writes `{mac_id}/{session_id}/_COMMIT.json` to GCS, making the session visible to `ListFiles`.
+Writes `{mac_id}/{session_id}/_COMMIT.json` (`{"session_id", "timestamp", "files", "uploaded_by"}`) to GCS, making the session visible to `ListFiles`.
 
 **Request body:** JSON array of uploaded filenames — `["f1.txt", "f2.txt"]`
 
