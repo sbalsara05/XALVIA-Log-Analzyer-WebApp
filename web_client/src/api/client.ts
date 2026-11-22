@@ -9,10 +9,12 @@ export function setTokenGetter(fn: () => Promise<string | null>) {
 
 export class ApiError extends Error {
   status: number;
-  constructor(status: number, message: string) {
+  code?: string;
+  constructor(status: number, message: string, code?: string) {
     super(message);
     this.name = "ApiError";
     this.status = status;
+    this.code = code;
   }
 }
 
@@ -31,8 +33,18 @@ export async function request<T>(path: string, options: RequestInit = {}): Promi
 
   if (!res.ok) {
     const text = await res.text().catch(() => "");
-    throw new ApiError(res.status, text || res.statusText);
+    let message = text || res.statusText;
+    let code: string | undefined;
+    try {
+      const body = JSON.parse(text);
+      message = body.error ?? message;
+      code = body.code;
+    } catch {
+      // body wasn't JSON, so keep the plain text
+    }
+    throw new ApiError(res.status, message, code);
   }
+
   if (res.status === 204) return undefined as T;
   return res.json() as Promise<T>;
 }
