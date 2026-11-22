@@ -3,6 +3,8 @@ import ricovrIcon from './imports/Copy_of_RICOVR_Icon.png';
 import ricovrLogo from './imports/Copy_of_RICOVR_Logo.png';
 import xalivaLogo from './imports/Xaliva_Logo.png';
 import ricovrVectorLogo from './imports/LOGO.svg';
+import { onAuthStateChanged } from 'firebase/auth';
+import { auth, loginWithEmail, logout } from './firebase';
 
 type ConnectionType = 'usb' | 'cloud' | 'local';
 type ConnectionStatus = 'connected' | 'disconnected' | 'connecting';
@@ -133,7 +135,7 @@ function LoginScreen({ onLogin }: LoginScreenProps) {
   const [isSigningIn, setIsSigningIn] = useState(false);
   const [error, setError] = useState('');
 
-  const handleSubmit = (event: React.FormEvent<HTMLFormElement>) => {
+  const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!email.trim() || !password.trim()) {
       setError('Enter your Ricovr email and password to continue.');
@@ -142,8 +144,22 @@ function LoginScreen({ onLogin }: LoginScreenProps) {
 
     setError('');
     setIsSigningIn(true);
-    window.setTimeout(onLogin, 900);
+    try {
+      await loginWithEmail(email.trim(), password);
+      onLogin();
+    } catch (err) {
+      const code = (err as { code?: string }).code;
+      if (code === 'auth/invalid-credential' || code === 'auth/wrong-password' || code === 'auth/user-not-found') {
+        setError('That email and password don’t match. Try again.');
+      } else if (code === 'auth/too-many-requests') {
+        setError('Too many attempts. Wait a minute and try again.');
+      } else {
+        setError('Sign in failed. Check your connection and try again.');
+      }
+      setIsSigningIn(false);
+    }
   };
+
 
   return (
     <main className="login">
@@ -247,6 +263,8 @@ export default function App() {
   const [activePanel, setActivePanel] = useState<'info' | 'log' | 'viz'>('log');
 
   const isConnected = status === 'connected';
+    // Firebase tells us when someone logs in or out (including after a page refresh)
+  useEffect(() => onAuthStateChanged(auth, (user) => setIsAuthenticated(!!user)), []);
 
   useEffect(() => {
     const exitTimer = window.setTimeout(() => setIsLoaderExiting(true), 1600);
@@ -296,7 +314,7 @@ export default function App() {
             </div>
           </div>
           <button
-            onClick={() => setIsAuthenticated(false)}
+            onClick={() => logout()}
             title="Sign out"
             style={{ width: '34px', height: '34px', borderRadius: '50%', border: 'none', background: 'linear-gradient(135deg, #1a9e97, #162d55)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: white, fontSize: '11px', fontWeight: 700, cursor: 'pointer' }}
           >
