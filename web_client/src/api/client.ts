@@ -1,4 +1,4 @@
-const BASE_URL = import.meta.env.VITE_GATEWAY_URL ?? "http://localhost:8080";
+const BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8080";
 
 // Firebase auth will replace this later with a function that returns the user's ID token
 let getToken: () => Promise<string | null> = async () => null;
